@@ -165,3 +165,93 @@ rpm_repos:
     path: opensearch/2.x/yum
     base_url: https://artifacts.opensearch.org/releases/bundle/opensearch/2.x/yum/
     gpg_key: https://artifacts.opensearch.org/publickeys/opensearch.pgp
+
+  # ---------------------------------------------------------------------------
+  # Microsoft (VS Code, .NET, Azure CLI, PowerShell)
+  # One repo contains all Microsoft Linux packages.
+  # ---------------------------------------------------------------------------
+  - name: microsoft-prod-rhel9
+    path: microsoft/rhel/9/prod
+    base_url: https://packages.microsoft.com/rhel/9/prod/
+    gpg_key: https://packages.microsoft.com/keys/microsoft.asc
+
+  - name: microsoft-prod-rhel8
+    path: microsoft/rhel/8/prod
+    base_url: https://packages.microsoft.com/rhel/8/prod/
+    gpg_key: https://packages.microsoft.com/keys/microsoft.asc
+
+  # ---------------------------------------------------------------------------
+  # HashiCorp (Terraform, Vault, Consul, Packer, Nomad)
+  # ---------------------------------------------------------------------------
+  - name: hashicorp-rhel9
+    path: hashicorp/rhel/9/x86_64/stable
+    base_url: https://rpm.releases.hashicorp.com/RHEL/9/x86_64/stable/
+    gpg_key: https://rpm.releases.hashicorp.com/gpg
+
+  - name: hashicorp-rhel8
+    path: hashicorp/rhel/8/x86_64/stable
+    base_url: https://rpm.releases.hashicorp.com/RHEL/8/x86_64/stable/
+    gpg_key: https://rpm.releases.hashicorp.com/gpg
+
+  # ---------------------------------------------------------------------------
+  # Grafana (Grafana, Loki, Promtail, Tempo, Mimir)
+  # ---------------------------------------------------------------------------
+  - name: grafana
+    path: grafana/rpm
+    base_url: https://rpm.grafana.com/
+    gpg_key: https://rpm.grafana.com/gpg.key
+
+  # ---------------------------------------------------------------------------
+  # InfluxDB / Telegraf
+  # ---------------------------------------------------------------------------
+  - name: influxdb
+    path: influxdb/rhel/x86_64/stable
+    base_url: https://repos.influxdata.com/rhel/x86_64/stable/
+    gpg_key: https://repos.influxdata.com/influxdata-archive_compat.key
+
+  # ---------------------------------------------------------------------------
+  # Nginx (official)
+  # ---------------------------------------------------------------------------
+  - name: nginx-stable-rhel9
+    path: nginx/stable/rhel/9/x86_64
+    base_url: https://nginx.org/packages/rhel/9/x86_64/
+    gpg_key: https://nginx.org/keys/nginx_signing.key
+
+  - name: nginx-mainline-rhel9
+    path: nginx/mainline/rhel/9/x86_64
+    base_url: https://nginx.org/packages/mainline/rhel/9/x86_64/
+    gpg_key: https://nginx.org/keys/nginx_signing.key
+
+  # ---------------------------------------------------------------------------
+  # MariaDB
+  # ---------------------------------------------------------------------------
+  - name: mariadb-1011-rhel9
+    path: mariadb/yum/10.11/rhel/9/x86_64
+    base_url: https://downloads.mariadb.com/MariaDB/mariadb-10.11/yum/rhel/9/x86_64/
+    gpg_key: https://supplychain.mariadb.com/MariaDB-Server-GPG-KEY
+
+  # ---------------------------------------------------------------------------
+  # MongoDB 7.0
+  # ---------------------------------------------------------------------------
+  - name: mongodb-70-rhel9
+    path: mongodb/7.0/rhel/9/x86_64
+    base_url: https://repo.mongodb.org/yum/redhat/9/mongodb-org/7.0/x86_64/
+    gpg_key: https://www.mongodb.org/static/pgp/server-7.0.asc
+
+  - name: mongodb-70-rhel8
+    path: mongodb/7.0/rhel/8/x86_64
+    base_url: https://repo.mongodb.org/yum/redhat/8/mongodb-org/7.0/x86_64/
+    gpg_key: https://www.mongodb.org/static/pgp/server-7.0.asc
+
+  # ---------------------------------------------------------------------------
+  # Kubernetes
+  # ---------------------------------------------------------------------------
+  - name: kubernetes-1.32
+    path: kubernetes/1.32/rpm/x86_64
+    base_url: https://pkgs.k8s.io/core:/stable:/v1.32/rpm/x86_64/
+    gpg_key: https://pkgs.k8s.io/core:/stable:/v1.32/rpm/repodata/repomd.xml.key
+
+  - name: kubernetes-1.31
+    path: kubernetes/1.31/rpm/x86_64
+    base_url: https://pkgs.k8s.io/core:/stable:/v1.31/rpm/x86_64/
+    gpg_key: https://pkgs.k8s.io/core:/stable:/v1.31/rpm/repodata/repomd.xml.key

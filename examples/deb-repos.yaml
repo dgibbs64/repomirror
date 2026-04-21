@@ -175,3 +175,156 @@ deb_repos:
     components: [main]
     arches: [amd64]
     gpg_key: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+
+  # ---------------------------------------------------------------------------
+  # Microsoft (VS Code, .NET, Azure CLI, PowerShell)
+  # One repo contains all Microsoft Linux packages.
+  # ---------------------------------------------------------------------------
+  - name: microsoft-prod-ubuntu-noble
+    path: microsoft/ubuntu/24.04/prod
+    mirror: https://packages.microsoft.com/ubuntu/24.04/prod
+    suites: [noble]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://packages.microsoft.com/keys/microsoft.asc
+
+  - name: microsoft-prod-ubuntu-jammy
+    path: microsoft/ubuntu/22.04/prod
+    mirror: https://packages.microsoft.com/ubuntu/22.04/prod
+    suites: [jammy]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://packages.microsoft.com/keys/microsoft.asc
+
+  - name: microsoft-prod-debian-12
+    path: microsoft/debian/12/prod
+    mirror: https://packages.microsoft.com/debian/12/prod
+    suites: [bookworm]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://packages.microsoft.com/keys/microsoft.asc
+
+  # ---------------------------------------------------------------------------
+  # HashiCorp (Terraform, Vault, Consul, Packer, Nomad)
+  # ---------------------------------------------------------------------------
+  - name: hashicorp-ubuntu-noble
+    path: hashicorp/ubuntu/noble
+    mirror: https://apt.releases.hashicorp.com
+    suites: [noble]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://apt.releases.hashicorp.com/gpg
+
+  - name: hashicorp-ubuntu-jammy
+    path: hashicorp/ubuntu/jammy
+    mirror: https://apt.releases.hashicorp.com
+    suites: [jammy]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://apt.releases.hashicorp.com/gpg
+
+  - name: hashicorp-debian-12
+    path: hashicorp/debian/bookworm
+    mirror: https://apt.releases.hashicorp.com
+    suites: [bookworm]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://apt.releases.hashicorp.com/gpg
+
+  # ---------------------------------------------------------------------------
+  # Grafana (Grafana, Loki, Promtail, Tempo, Mimir)
+  # ---------------------------------------------------------------------------
+  - name: grafana
+    path: grafana/apt
+    mirror: https://apt.grafana.com
+    suites: [stable]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://apt.grafana.com/gpg.key
+
+  # ---------------------------------------------------------------------------
+  # InfluxDB / Telegraf
+  # ---------------------------------------------------------------------------
+  - name: influxdb
+    path: influxdb/apt
+    mirror: https://repos.influxdata.com/ubuntu
+    suites: [stable]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://repos.influxdata.com/influxdata-archive_compat.key
+
+  # ---------------------------------------------------------------------------
+  # Nginx (official)
+  # ---------------------------------------------------------------------------
+  - name: nginx-stable-ubuntu-noble
+    path: nginx/ubuntu
+    mirror: https://nginx.org/packages/ubuntu
+    suites: [noble]
+    components: [nginx]
+    arches: [amd64]
+    gpg_key: https://nginx.org/keys/nginx_signing.key
+
+  - name: nginx-stable-debian-12
+    path: nginx/debian
+    mirror: https://nginx.org/packages/debian
+    suites: [bookworm]
+    components: [nginx]
+    arches: [amd64]
+    gpg_key: https://nginx.org/keys/nginx_signing.key
+
+  # ---------------------------------------------------------------------------
+  # MariaDB
+  # ---------------------------------------------------------------------------
+  - name: mariadb-1011-ubuntu-jammy
+    path: mariadb/apt/10.11
+    mirror: https://downloads.mariadb.com/MariaDB/mariadb-10.11/repo/ubuntu
+    suites: [jammy]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://supplychain.mariadb.com/MariaDB-Server-GPG-KEY
+
+  - name: mariadb-1011-debian-12
+    path: mariadb/apt/10.11
+    mirror: https://downloads.mariadb.com/MariaDB/mariadb-10.11/repo/debian
+    suites: [bookworm]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://supplychain.mariadb.com/MariaDB-Server-GPG-KEY
+
+  # ---------------------------------------------------------------------------
+  # MongoDB 7.0
+  # ---------------------------------------------------------------------------
+  - name: mongodb-70-ubuntu-jammy
+    path: mongodb/apt/ubuntu/jammy/mongodb-org/7.0
+    mirror: https://repo.mongodb.org/apt/ubuntu
+    suites: [jammy/mongodb-org/7.0]
+    components: [multiverse]
+    arches: [amd64]
+    gpg_key: https://www.mongodb.org/static/pgp/server-7.0.asc
+
+  - name: mongodb-70-debian-12
+    path: mongodb/apt/debian/bookworm/mongodb-org/7.0
+    mirror: https://repo.mongodb.org/apt/debian
+    suites: [bookworm/mongodb-org/7.0]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://www.mongodb.org/static/pgp/server-7.0.asc
+
+  # ---------------------------------------------------------------------------
+  # Kubernetes
+  # ---------------------------------------------------------------------------
+  - name: kubernetes-1.32-ubuntu
+    path: kubernetes/1.32/apt
+    mirror: https://pkgs.k8s.io/core:/stable:/v1.32/deb
+    suites: [/]
+    components: []
+    arches: [amd64]
+    gpg_key: https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key
+
+  - name: kubernetes-1.31-ubuntu
+    path: kubernetes/1.31/apt
+    mirror: https://pkgs.k8s.io/core:/stable:/v1.31/deb
+    suites: [/]
+    components: []
+    arches: [amd64]
+    gpg_key: https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key

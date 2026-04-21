@@ -87,8 +87,8 @@ The [examples/](examples/) directory contains ready-to-paste snippets for common
 
 | File | Contents |
 |------|----------|
-| [examples/rpm-repos.yaml](examples/rpm-repos.yaml) | CentOS Stream 9, Rocky Linux 8/9, AlmaLinux 8/9, Fedora 42, EPEL 8/9, Zabbix 6.0/7.0, PostgreSQL 16/17, MySQL 8.0, Docker CE, Elasticsearch |
-| [examples/deb-repos.yaml](examples/deb-repos.yaml) | Ubuntu 20.04/22.04/24.04, Debian 11/12, Zabbix 6.0/7.0, PostgreSQL, Docker CE, Elasticsearch |
+| [examples/rpm-repos.yaml](examples/rpm-repos.yaml) | CentOS Stream 9, Rocky Linux 8/9, AlmaLinux 8/9, Fedora 42, EPEL 8/9, Zabbix 6.0/7.0, PostgreSQL 16/17, MySQL 8.0, Docker CE, Elasticsearch/OpenSearch, Microsoft, HashiCorp, Grafana, InfluxDB, Nginx, MariaDB, MongoDB, Kubernetes |
+| [examples/deb-repos.yaml](examples/deb-repos.yaml) | Ubuntu 20.04/22.04/24.04, Debian 11/12, Zabbix 6.0/7.0, PostgreSQL, Docker CE, Elasticsearch, Microsoft, HashiCorp, Grafana, InfluxDB, Nginx, MariaDB, MongoDB, Kubernetes |
 
 Copy the relevant blocks into the `rpm_repos` or `deb_repos` section of your `mirrors.yaml`.
 
