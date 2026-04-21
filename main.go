@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"repomirror/clientconfigs"
 	"repomirror/config"
 	"repomirror/deb"
 	"repomirror/downloader"
@@ -92,6 +93,16 @@ func main() {
 		if err := rpm.Mirror(repo.BaseURL, destDir, repo.Name, repo.GPGKey, cfg.Workers, dl); err != nil {
 			log.Printf("ERROR: %s: %v", path, err)
 			exitCode = 1
+		}
+	}
+
+	// Generate client config files (yum .repo / apt .list) pointing at the mirror.
+	if cfg.MirrorURL != "" {
+		if err := clientconfigs.Generate(cfg, outputDir, cfg.MirrorURL); err != nil {
+			log.Printf("ERROR: generating client configs: %v", err)
+			exitCode = 1
+		} else {
+			log.Printf("Client configs written to %s", filepath.Join(outputDir, "client-configs"))
 		}
 	}
 

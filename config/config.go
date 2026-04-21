@@ -10,6 +10,7 @@ import (
 // Config is the top-level configuration structure read from mirrors.yaml.
 type Config struct {
 	OutputDir string     `yaml:"output_dir"`
+	MirrorURL string     `yaml:"mirror_url"` // base URL clients use to reach this mirror, e.g. http://mirror.example.com
 	Workers   int        `yaml:"workers"`
 	RPMRepos  []RPMRepo  `yaml:"rpm_repos"`
 	DEBRepos  []DEBRepo  `yaml:"deb_repos"`
@@ -64,8 +65,9 @@ func ExampleConfig() string {
 #   deb http://example.com/ubuntu jammy main
 #   baseurl=http://example.com/rocky/9/BaseOS/x86_64/os/
 
-output_dir: ./mirror   # root served by nginx/apache
-workers: 4             # concurrent download workers
+output_dir: ./mirror              # root served by nginx/apache
+mirror_url: http://mirror.example.com  # base URL clients use to reach this server
+workers: 4                            # concurrent download workers
 
 rpm_repos:
 

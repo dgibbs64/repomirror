@@ -9,8 +9,9 @@
 # NOTE: Splunk Universal Forwarder has no public mirrorable repo — packages
 # must be downloaded manually from splunk.com (license agreement required).
 
-output_dir: ./mirror   # root served by nginx/apache
-workers: 4             # concurrent download workers
+output_dir: ./mirror             # root served by nginx/apache
+mirror_url: http://mirror.example.com  # base URL clients use to reach this server
+workers: 4                       # concurrent download workers
 
 rpm_repos:
 
