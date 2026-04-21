@@ -4,6 +4,17 @@
 deb_repos:
 
   # ---------------------------------------------------------------------------
+  # Ubuntu 26.04 LTS (Resolute Raccoon)
+  # ---------------------------------------------------------------------------
+  - name: ubuntu-resolute
+    path: ubuntu
+    mirror: http://archive.ubuntu.com/ubuntu
+    suites: [resolute, resolute-updates, resolute-security]
+    components: [main, restricted, universe]
+    arches: [amd64]
+    gpg_key: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C
+
+  # ---------------------------------------------------------------------------
   # Ubuntu 24.04 LTS (Noble Numbat)
   # Client config: deb [signed-by=...] http://mirror.example.com/ubuntu noble main restricted universe
   # ---------------------------------------------------------------------------
@@ -79,6 +90,14 @@ deb_repos:
   # ---------------------------------------------------------------------------
   # Zabbix
   # ---------------------------------------------------------------------------
+  - name: zabbix-70-ubuntu-resolute
+    path: zabbix/7.0/ubuntu
+    mirror: https://repo.zabbix.com/zabbix/7.0/ubuntu
+    suites: [resolute]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://repo.zabbix.com/zabbix-official-repo.key
+
   - name: zabbix-70-ubuntu-noble
     path: zabbix/7.0/ubuntu
     mirror: https://repo.zabbix.com/zabbix/7.0/ubuntu
@@ -114,6 +133,14 @@ deb_repos:
   # ---------------------------------------------------------------------------
   # PostgreSQL
   # ---------------------------------------------------------------------------
+  - name: postgresql-ubuntu-resolute
+    path: postgresql/apt
+    mirror: https://apt.postgresql.org/pub/repos/apt
+    suites: [resolute-pgdg]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
   - name: postgresql-ubuntu-jammy
     path: postgresql/apt
     mirror: https://apt.postgresql.org/pub/repos/apt
@@ -141,6 +168,14 @@ deb_repos:
   # ---------------------------------------------------------------------------
   # Docker CE
   # ---------------------------------------------------------------------------
+  - name: docker-ce-ubuntu-resolute
+    path: docker/linux/ubuntu
+    mirror: https://download.docker.com/linux/ubuntu
+    suites: [resolute]
+    components: [stable]
+    arches: [amd64]
+    gpg_key: https://download.docker.com/linux/ubuntu/gpg
+
   - name: docker-ce-ubuntu-noble
     path: docker/linux/ubuntu
     mirror: https://download.docker.com/linux/ubuntu
@@ -180,6 +215,14 @@ deb_repos:
   # Microsoft (VS Code, .NET, Azure CLI, PowerShell)
   # One repo contains all Microsoft Linux packages.
   # ---------------------------------------------------------------------------
+  - name: microsoft-prod-ubuntu-resolute
+    path: microsoft/ubuntu/26.04/prod
+    mirror: https://packages.microsoft.com/ubuntu/26.04/prod
+    suites: [resolute]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://packages.microsoft.com/keys/microsoft.asc
+
   - name: microsoft-prod-ubuntu-noble
     path: microsoft/ubuntu/24.04/prod
     mirror: https://packages.microsoft.com/ubuntu/24.04/prod
@@ -207,6 +250,14 @@ deb_repos:
   # ---------------------------------------------------------------------------
   # HashiCorp (Terraform, Vault, Consul, Packer, Nomad)
   # ---------------------------------------------------------------------------
+  - name: hashicorp-ubuntu-resolute
+    path: hashicorp/ubuntu/resolute
+    mirror: https://apt.releases.hashicorp.com
+    suites: [resolute]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://apt.releases.hashicorp.com/gpg
+
   - name: hashicorp-ubuntu-noble
     path: hashicorp/ubuntu/noble
     mirror: https://apt.releases.hashicorp.com
@@ -256,6 +307,14 @@ deb_repos:
   # ---------------------------------------------------------------------------
   # Nginx (official)
   # ---------------------------------------------------------------------------
+  - name: nginx-stable-ubuntu-resolute
+    path: nginx/ubuntu
+    mirror: https://nginx.org/packages/ubuntu
+    suites: [resolute]
+    components: [nginx]
+    arches: [amd64]
+    gpg_key: https://nginx.org/keys/nginx_signing.key
+
   - name: nginx-stable-ubuntu-noble
     path: nginx/ubuntu
     mirror: https://nginx.org/packages/ubuntu
@@ -275,6 +334,14 @@ deb_repos:
   # ---------------------------------------------------------------------------
   # MariaDB
   # ---------------------------------------------------------------------------
+  - name: mariadb-1011-ubuntu-resolute
+    path: mariadb/apt/10.11
+    mirror: https://downloads.mariadb.com/MariaDB/mariadb-10.11/repo/ubuntu
+    suites: [resolute]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://supplychain.mariadb.com/MariaDB-Server-GPG-KEY
+
   - name: mariadb-1011-ubuntu-jammy
     path: mariadb/apt/10.11
     mirror: https://downloads.mariadb.com/MariaDB/mariadb-10.11/repo/ubuntu
@@ -294,6 +361,14 @@ deb_repos:
   # ---------------------------------------------------------------------------
   # MongoDB 7.0
   # ---------------------------------------------------------------------------
+  - name: mongodb-70-ubuntu-resolute
+    path: mongodb/apt/ubuntu/resolute/mongodb-org/7.0
+    mirror: https://repo.mongodb.org/apt/ubuntu
+    suites: [resolute/mongodb-org/7.0]
+    components: [multiverse]
+    arches: [amd64]
+    gpg_key: https://www.mongodb.org/static/pgp/server-7.0.asc
+
   - name: mongodb-70-ubuntu-jammy
     path: mongodb/apt/ubuntu/jammy/mongodb-org/7.0
     mirror: https://repo.mongodb.org/apt/ubuntu
