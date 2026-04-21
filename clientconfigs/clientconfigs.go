@@ -91,10 +91,21 @@ func generateDEB(cfg *config.Config, outputDir, mirrorURL string) error {
 		}
 		repoURL := mirrorURL + "/" + strings.TrimLeft(filepath.ToSlash(path), "/")
 
+		keyringPath := fmt.Sprintf("/etc/apt/keyrings/%s.gpg", repo.Name)
+
 		// Legacy one-line format — works on all Debian/Ubuntu versions.
+		// [signed-by=] is supported on Ubuntu 20.04+ / Debian 10+ and is
+		// strongly recommended over the deprecated apt-key approach.
 		var legacy strings.Builder
+		if repo.GPGKey != "" {
+			fmt.Fprintf(&legacy, "# Import GPG key: curl -fsSL %s | gpg --dearmor -o %s\n", repo.GPGKey, keyringPath)
+		}
 		for _, suite := range repo.Suites {
-			fmt.Fprintf(&legacy, "deb %s %s %s\n", repoURL, suite, strings.Join(repo.Components, " "))
+			if repo.GPGKey != "" {
+				fmt.Fprintf(&legacy, "deb [signed-by=%s] %s %s %s\n", keyringPath, repoURL, suite, strings.Join(repo.Components, " "))
+			} else {
+				fmt.Fprintf(&legacy, "deb %s %s %s\n", repoURL, suite, strings.Join(repo.Components, " "))
+			}
 		}
 		dest := filepath.Join(dir, repo.Name+".list")
 		if err := os.WriteFile(dest, []byte(legacy.String()), 0o644); err != nil {
@@ -103,10 +114,6 @@ func generateDEB(cfg *config.Config, outputDir, mirrorURL string) error {
 
 		// deb822 format — preferred on Ubuntu 22.04+ and Debian 12+.
 		// Multiple suites are combined into a single stanza.
-		// Signed-By references a keyring file on the client machine;
-		// import the GPG key with:
-		//   curl -fsSL <gpg_key_url> | gpg --dearmor -o /etc/apt/keyrings/<name>.gpg
-		keyringPath := fmt.Sprintf("/etc/apt/keyrings/%s.gpg", repo.Name)
 		var deb822 strings.Builder
 		fmt.Fprintf(&deb822, "Types: deb\n")
 		fmt.Fprintf(&deb822, "URIs: %s\n", repoURL)
