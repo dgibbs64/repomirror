@@ -1,0 +1,133 @@
+package config
+
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Config is the top-level configuration structure read from mirrors.yaml.
+type Config struct {
+	OutputDir string     `yaml:"output_dir"`
+	Workers   int        `yaml:"workers"`
+	RPMRepos  []RPMRepo  `yaml:"rpm_repos"`
+	DEBRepos  []DEBRepo  `yaml:"deb_repos"`
+}
+
+// RPMRepo describes a YUM/DNF repository to mirror.
+type RPMRepo struct {
+	Name    string   `yaml:"name"`
+	Path    string   `yaml:"path"`     // URL path served by the webserver, e.g. rocky/9/BaseOS/x86_64/os
+	BaseURL string   `yaml:"base_url"`
+	Arches  []string `yaml:"arches"`
+	GPGKey  string   `yaml:"gpg_key"` // URL to the GPG public key
+}
+
+// DEBRepo describes an APT repository to mirror.
+type DEBRepo struct {
+	Name       string   `yaml:"name"`
+	Path       string   `yaml:"path"`       // URL path served by the webserver, e.g. ubuntu
+	Mirror     string   `yaml:"mirror"`     // e.g. http://archive.ubuntu.com/ubuntu
+	Suites     []string `yaml:"suites"`     // e.g. jammy, jammy-updates
+	Components []string `yaml:"components"` // e.g. main, restricted, universe
+	Arches     []string `yaml:"arches"`     // e.g. amd64
+	GPGKey     string   `yaml:"gpg_key"`    // URL to the GPG public key
+}
+
+// Load reads and parses the YAML config file at path.
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading config %s: %w", path, err)
+	}
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing config %s: %w", path, err)
+	}
+	if cfg.OutputDir == "" {
+		cfg.OutputDir = "."
+	}
+	if cfg.Workers <= 0 {
+		cfg.Workers = 4
+	}
+	return &cfg, nil
+}
+
+// ExampleConfig returns a commented example config YAML string.
+func ExampleConfig() string {
+	return `# repomirror configuration file
+# Place this file (mirrors.yaml) in the same directory as the repomirror binary.
+#
+# 'output_dir' is the root that your webserver serves.  Each repo's 'path'
+# maps directly to the URL path clients will use, e.g.:
+#   deb http://example.com/ubuntu jammy main
+#   baseurl=http://example.com/rocky/9/BaseOS/x86_64/os/
+
+output_dir: ./mirror   # root served by nginx/apache
+workers: 4             # concurrent download workers
+
+rpm_repos:
+
+  # Rocky Linux 9 — two separate repo entries, one per repo path
+  - name: rocky-9-baseos
+    path: rocky/9/BaseOS/x86_64/os
+    base_url: https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/
+    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-9
+
+  - name: rocky-9-appstream
+    path: rocky/9/AppStream/x86_64/os
+    base_url: https://dl.rockylinux.org/pub/rocky/9/AppStream/x86_64/os/
+    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-9
+
+  # CentOS Stream 9
+  - name: centos-9stream-baseos
+    path: centos/9-stream/BaseOS/x86_64/os
+    base_url: https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/
+    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+
+  # AlmaLinux 9
+  - name: almalinux-9-baseos
+    path: almalinux/9/BaseOS/x86_64/os
+    base_url: https://repo.almalinux.org/almalinux/9/BaseOS/x86_64/os/
+    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-9
+
+  # Zabbix 7.0 for Rocky Linux 9
+  - name: zabbix-70-rocky9
+    path: zabbix/7.0/rhel/9/x86_64
+    base_url: https://repo.zabbix.com/zabbix/7.0/rhel/9/x86_64/
+    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-A14FE591
+
+deb_repos:
+
+  # Ubuntu 22.04 LTS (Jammy)
+  # Client config: deb http://example.com/ubuntu jammy main restricted universe
+  - name: ubuntu-jammy
+    path: ubuntu
+    mirror: http://archive.ubuntu.com/ubuntu
+    suites:
+      - jammy
+      - jammy-updates
+      - jammy-security
+    components:
+      - main
+      - restricted
+      - universe
+    arches:
+      - amd64
+    gpg_key: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C
+
+  # Zabbix 7.0 for Ubuntu 22.04
+  # Client config: deb http://example.com/zabbix/7.0/ubuntu jammy main
+  - name: zabbix-70-ubuntu-jammy
+    path: zabbix/7.0/ubuntu
+    mirror: https://repo.zabbix.com/zabbix/7.0/ubuntu
+    suites:
+      - jammy
+    components:
+      - main
+    arches:
+      - amd64
+    gpg_key: https://repo.zabbix.com/zabbix-official-repo.key
+`
+}

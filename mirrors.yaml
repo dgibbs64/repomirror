@@ -1,0 +1,95 @@
+# repomirror configuration file
+# Place this file (mirrors.yaml) in the same directory as the repomirror binary.
+#
+# 'output_dir' is the root that your webserver serves.  Each repo's 'path'
+# maps directly to the URL path clients will use, e.g.:
+#   deb http://example.com/ubuntu jammy main
+#   baseurl=http://example.com/centos/9-stream/BaseOS/x86_64/os/
+#
+# NOTE: Splunk Universal Forwarder has no public mirrorable repo — packages
+# must be downloaded manually from splunk.com (license agreement required).
+
+output_dir: ./mirror   # root served by nginx/apache
+workers: 4             # concurrent download workers
+
+rpm_repos:
+
+  # CentOS Stream 9 — BaseOS
+  # Client .repo: baseurl=http://example.com/centos/9-stream/BaseOS/x86_64/os/
+  - name: centos-9stream-baseos
+    path: centos/9-stream/BaseOS/x86_64/os
+    base_url: https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/
+    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+
+  # CentOS Stream 9 — AppStream
+  # Client .repo: baseurl=http://example.com/centos/9-stream/AppStream/x86_64/os/
+  - name: centos-9stream-appstream
+    path: centos/9-stream/AppStream/x86_64/os
+    base_url: https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/
+    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+
+  # Zabbix 6.0 for RHEL/CentOS 9
+  # Client .repo: baseurl=http://example.com/zabbix/6.0/rhel/9/x86_64/
+  - name: zabbix-60-rhel9
+    path: zabbix/6.0/rhel/9/x86_64
+    base_url: https://repo.zabbix.com/zabbix/6.0/rhel/9/x86_64/
+    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-A14FE591
+
+  # PostgreSQL 16 for RHEL/CentOS 9
+  # Client .repo: baseurl=http://example.com/postgresql/16/redhat/rhel-9-x86_64/
+  - name: postgresql-16-rhel9
+    path: postgresql/16/redhat/rhel-9-x86_64
+    base_url: https://download.postgresql.org/pub/repos/yum/16/redhat/rhel-9-x86_64/
+    gpg_key: https://yum.postgresql.org/keys/PGDG-RPM-GPG-KEY-RHEL
+
+  # EPEL 9 (Extra Packages for Enterprise Linux)
+  # Client .repo: baseurl=http://example.com/epel/9/Everything/x86_64/
+  - name: epel-9
+    path: epel/9/Everything/x86_64
+    base_url: https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/
+    gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
+
+deb_repos:
+
+  # Ubuntu 22.04 LTS (Jammy)
+  # Client sources.list: deb http://example.com/ubuntu jammy main restricted universe
+  - name: ubuntu-jammy
+    path: ubuntu
+    mirror: http://archive.ubuntu.com/ubuntu
+    suites:
+      - jammy
+      - jammy-updates
+      - jammy-security
+    components:
+      - main
+      - restricted
+      - universe
+    arches:
+      - amd64
+    gpg_key: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C
+
+  # Zabbix 6.0 for Ubuntu 22.04
+  # Client sources.list: deb http://example.com/zabbix/6.0/ubuntu jammy main
+  - name: zabbix-60-ubuntu-jammy
+    path: zabbix/6.0/ubuntu
+    mirror: https://repo.zabbix.com/zabbix/6.0/ubuntu
+    suites:
+      - jammy
+    components:
+      - main
+    arches:
+      - amd64
+    gpg_key: https://repo.zabbix.com/zabbix-official-repo.key
+
+  # PostgreSQL 16 for Ubuntu 22.04
+  # Client sources.list: deb http://example.com/postgresql/apt jammy-pgdg main
+  - name: postgresql-16-ubuntu-jammy
+    path: postgresql/apt
+    mirror: https://apt.postgresql.org/pub/repos/apt
+    suites:
+      - jammy-pgdg
+    components:
+      - main
+    arches:
+      - amd64
+    gpg_key: https://www.postgresql.org/media/keys/ACCC4CF8.asc
