@@ -12,6 +12,7 @@ A single static binary that mirrors RPM (YUM/DNF) and DEB (APT) repositories for
 - URL-path-aligned directory layout (mirrors the upstream URL structure)
 - Live progress output with speed and ETA
 - Sequential per-repo execution with configurable concurrent connections per repo
+- Generates ready-to-use client config files (`.repo`, `.list`, `.sources`)
 - Single static binary — no runtime dependencies
 
 ## Installation
@@ -38,7 +39,7 @@ This writes an example `mirrors.yaml` next to the binary.
 ./repomirror -dry-run
 ```
 
-Parses repository metadata and shows package counts without downloading anything.
+Parses repository metadata and shows package counts without downloading anything. Also generates client config files so you can inspect them before running a full sync.
 
 ### Mirror repositories
 
@@ -58,12 +59,13 @@ Parses repository metadata and shows package counts without downloading anything
 ## Configuration
 
 ```yaml
-output_dir: ./mirror   # where to write mirrored files
-workers: 4             # concurrent connections per repo
+output_dir: ./mirror              # where to write mirrored files
+mirror_url: http://mirror.example.com  # base URL clients use to reach this server
+workers: 4                        # concurrent connections per repo
 
 rpm_repos:
   - name: centos-9stream-baseos
-    path: centos/9-stream/BaseOS/x86_64/os   # output directory path
+    path: centos/9-stream/BaseOS/x86_64/os   # output directory under output_dir
     base_url: https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/
     gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
 
@@ -77,7 +79,18 @@ deb_repos:
     gpg_key: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C
 ```
 
-See [mirrors.yaml](mirrors.yaml) for a full example covering CentOS Stream 9, Ubuntu 22.04, Zabbix 6.0, PostgreSQL 16, and EPEL 9.
+See [mirrors.yaml](mirrors.yaml) for a full working example covering CentOS Stream 9, Ubuntu 22.04, Zabbix 6.0, PostgreSQL 16, and EPEL 9.
+
+## Repo snippets
+
+The [examples/](examples/) directory contains ready-to-paste snippets for common repositories:
+
+| File | Contents |
+|------|----------|
+| [examples/rpm-repos.yaml](examples/rpm-repos.yaml) | CentOS Stream 9, Rocky Linux 8/9, AlmaLinux 8/9, Fedora 42, EPEL 8/9, Zabbix 6.0/7.0, PostgreSQL 16/17, MySQL 8.0, Docker CE, Elasticsearch |
+| [examples/deb-repos.yaml](examples/deb-repos.yaml) | Ubuntu 20.04/22.04/24.04, Debian 11/12, Zabbix 6.0/7.0, PostgreSQL, Docker CE, Elasticsearch |
+
+Copy the relevant blocks into the `rpm_repos` or `deb_repos` section of your `mirrors.yaml`.
 
 ## Directory layout
 
@@ -92,6 +105,9 @@ mirror/
   zabbix/6.0/rhel/9/x86_64/
   postgresql/16/redhat/rhel-9-x86_64/
   epel/9/Everything/x86_64/
+  client-configs/
+    yum.repos.d/
+    apt/sources.list.d/
 ```
 
 ## Serving the mirror
@@ -107,7 +123,59 @@ server {
 }
 ```
 
-Then configure clients to use `http://mirror.example.com` as the repository base URL.
+Set `mirror_url: http://mirror.example.com` in `mirrors.yaml` to match.
+
+## Client configuration files
+
+When `mirror_url` is set, repomirror generates client config files after each run under `output_dir/client-configs/`:
+
+```
+client-configs/
+  yum.repos.d/
+    centos-9stream-baseos.repo      ← drop in /etc/yum.repos.d/
+    rocky-9-baseos.repo
+    ...
+  apt/sources.list.d/
+    ubuntu-jammy.list               ← legacy format, all Debian/Ubuntu versions
+    ubuntu-jammy.sources            ← deb822 format, Ubuntu 22.04+ / Debian 12+
+    ...
+```
+
+### RPM clients (RHEL, Rocky, Alma, CentOS, Fedora)
+
+```bash
+cp centos-9stream-baseos.repo /etc/yum.repos.d/
+dnf makecache
+```
+
+### DEB clients — legacy format (Ubuntu 20.04 / Debian 10+)
+
+Each `.list` file includes a `signed-by=` option and a comment with the GPG import command:
+
+```
+# Import GPG key: curl -fsSL https://... | gpg --dearmor -o /etc/apt/keyrings/ubuntu-jammy.gpg
+deb [signed-by=/etc/apt/keyrings/ubuntu-jammy.gpg] http://mirror.example.com/ubuntu jammy main restricted universe
+```
+
+```bash
+# 1. Import the GPG key (run the curl command from the comment in the .list file)
+curl -fsSL https://... | gpg --dearmor -o /etc/apt/keyrings/ubuntu-jammy.gpg
+
+# 2. Install the source file
+cp ubuntu-jammy.list /etc/apt/sources.list.d/
+apt update
+```
+
+### DEB clients — deb822 format (Ubuntu 22.04+ / Debian 12+)
+
+```bash
+# 1. Import the GPG key (command is in the .sources file as a comment)
+curl -fsSL https://... | gpg --dearmor -o /etc/apt/keyrings/ubuntu-jammy.gpg
+
+# 2. Install the source file
+cp ubuntu-jammy.sources /etc/apt/sources.list.d/
+apt update
+```
 
 ## Building
 
@@ -122,3 +190,4 @@ For a fully static binary:
 ```bash
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o repomirror .
 ```
+

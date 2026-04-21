@@ -1,0 +1,167 @@
+# RPM repository snippets for mirrors.yaml
+# Copy the entries you need into the rpm_repos section of your mirrors.yaml.
+# All examples are for x86_64. Adjust the path/base_url for other arches (e.g. aarch64).
+
+rpm_repos:
+
+  # ---------------------------------------------------------------------------
+  # CentOS Stream 9
+  # ---------------------------------------------------------------------------
+  - name: centos-9stream-baseos
+    path: centos/9-stream/BaseOS/x86_64/os
+    base_url: https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/
+    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+
+  - name: centos-9stream-appstream
+    path: centos/9-stream/AppStream/x86_64/os
+    base_url: https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/
+    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+
+  - name: centos-9stream-extras
+    path: centos/9-stream/extras/x86_64/os
+    base_url: https://mirror.stream.centos.org/SIGs/9-stream/extras/x86_64/extras-common/
+    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+
+  # ---------------------------------------------------------------------------
+  # Rocky Linux 9
+  # ---------------------------------------------------------------------------
+  - name: rocky-9-baseos
+    path: rocky/9/BaseOS/x86_64/os
+    base_url: https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/
+    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-9
+
+  - name: rocky-9-appstream
+    path: rocky/9/AppStream/x86_64/os
+    base_url: https://dl.rockylinux.org/pub/rocky/9/AppStream/x86_64/os/
+    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-9
+
+  - name: rocky-9-extras
+    path: rocky/9/extras/x86_64/os
+    base_url: https://dl.rockylinux.org/pub/rocky/9/extras/x86_64/os/
+    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-9
+
+  # Rocky Linux 8
+  - name: rocky-8-baseos
+    path: rocky/8/BaseOS/x86_64/os
+    base_url: https://dl.rockylinux.org/pub/rocky/8/BaseOS/x86_64/os/
+    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-8
+
+  - name: rocky-8-appstream
+    path: rocky/8/AppStream/x86_64/os
+    base_url: https://dl.rockylinux.org/pub/rocky/8/AppStream/x86_64/os/
+    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-8
+
+  # ---------------------------------------------------------------------------
+  # AlmaLinux 9
+  # ---------------------------------------------------------------------------
+  - name: almalinux-9-baseos
+    path: almalinux/9/BaseOS/x86_64/os
+    base_url: https://repo.almalinux.org/almalinux/9/BaseOS/x86_64/os/
+    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-9
+
+  - name: almalinux-9-appstream
+    path: almalinux/9/AppStream/x86_64/os
+    base_url: https://repo.almalinux.org/almalinux/9/AppStream/x86_64/os/
+    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-9
+
+  # AlmaLinux 8
+  - name: almalinux-8-baseos
+    path: almalinux/8/BaseOS/x86_64/os
+    base_url: https://repo.almalinux.org/almalinux/8/BaseOS/x86_64/os/
+    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux
+
+  - name: almalinux-8-appstream
+    path: almalinux/8/AppStream/x86_64/os
+    base_url: https://repo.almalinux.org/almalinux/8/AppStream/x86_64/os/
+    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux
+
+  # ---------------------------------------------------------------------------
+  # Fedora 42
+  # ---------------------------------------------------------------------------
+  - name: fedora-42-everything
+    path: fedora/releases/42/Everything/x86_64/os
+    base_url: https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Everything/x86_64/os/
+    gpg_key: https://getfedora.org/static/keys/RPM-GPG-KEY-fedora-42-primary
+
+  - name: fedora-42-updates
+    path: fedora/updates/42/Everything/x86_64
+    base_url: https://dl.fedoraproject.org/pub/fedora/linux/updates/42/Everything/x86_64/
+    gpg_key: https://getfedora.org/static/keys/RPM-GPG-KEY-fedora-42-primary
+
+  # ---------------------------------------------------------------------------
+  # EPEL (Extra Packages for Enterprise Linux)
+  # ---------------------------------------------------------------------------
+  - name: epel-9
+    path: epel/9/Everything/x86_64
+    base_url: https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/
+    gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
+
+  - name: epel-8
+    path: epel/8/Everything/x86_64
+    base_url: https://dl.fedoraproject.org/pub/epel/8/Everything/x86_64/
+    gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-8
+
+  # ---------------------------------------------------------------------------
+  # Zabbix
+  # ---------------------------------------------------------------------------
+  - name: zabbix-70-rhel9
+    path: zabbix/7.0/rhel/9/x86_64
+    base_url: https://repo.zabbix.com/zabbix/7.0/rhel/9/x86_64/
+    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-A14FE591
+
+  - name: zabbix-60-rhel9
+    path: zabbix/6.0/rhel/9/x86_64
+    base_url: https://repo.zabbix.com/zabbix/6.0/rhel/9/x86_64/
+    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-A14FE591
+
+  - name: zabbix-70-rhel8
+    path: zabbix/7.0/rhel/8/x86_64
+    base_url: https://repo.zabbix.com/zabbix/7.0/rhel/8/x86_64/
+    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-A14FE591
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL
+  # ---------------------------------------------------------------------------
+  - name: postgresql-17-rhel9
+    path: postgresql/17/redhat/rhel-9-x86_64
+    base_url: https://download.postgresql.org/pub/repos/yum/17/redhat/rhel-9-x86_64/
+    gpg_key: https://yum.postgresql.org/keys/PGDG-RPM-GPG-KEY-RHEL
+
+  - name: postgresql-16-rhel9
+    path: postgresql/16/redhat/rhel-9-x86_64
+    base_url: https://download.postgresql.org/pub/repos/yum/16/redhat/rhel-9-x86_64/
+    gpg_key: https://yum.postgresql.org/keys/PGDG-RPM-GPG-KEY-RHEL
+
+  - name: postgresql-16-rhel8
+    path: postgresql/16/redhat/rhel-8-x86_64
+    base_url: https://download.postgresql.org/pub/repos/yum/16/redhat/rhel-8-x86_64/
+    gpg_key: https://yum.postgresql.org/keys/PGDG-RPM-GPG-KEY-RHEL
+
+  # ---------------------------------------------------------------------------
+  # MySQL 8.0 (Community)
+  # ---------------------------------------------------------------------------
+  - name: mysql-80-rhel9
+    path: mysql/8.0/rhel/9/x86_64
+    base_url: https://repo.mysql.com/yum/mysql-8.0-community/el/9/x86_64/
+    gpg_key: https://repo.mysql.com/RPM-GPG-KEY-mysql-2023
+
+  # ---------------------------------------------------------------------------
+  # Docker CE
+  # ---------------------------------------------------------------------------
+  - name: docker-ce-rhel9
+    path: docker/linux/centos/9/x86_64/stable
+    base_url: https://download.docker.com/linux/centos/9/x86_64/stable/
+    gpg_key: https://download.docker.com/linux/centos/gpg
+
+  # ---------------------------------------------------------------------------
+  # Elasticsearch / OpenSearch
+  # ---------------------------------------------------------------------------
+  - name: elasticsearch-8
+    path: elasticsearch/8.x/yum
+    base_url: https://artifacts.elastic.co/packages/8.x/yum/
+    gpg_key: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+
+  - name: opensearch-2
+    path: opensearch/2.x/yum
+    base_url: https://artifacts.opensearch.org/releases/bundle/opensearch/2.x/yum/
+    gpg_key: https://artifacts.opensearch.org/publickeys/opensearch.pgp

@@ -1,0 +1,177 @@
+# DEB repository snippets for mirrors.yaml
+# Copy the entries you need into the deb_repos section of your mirrors.yaml.
+
+deb_repos:
+
+  # ---------------------------------------------------------------------------
+  # Ubuntu 24.04 LTS (Noble Numbat)
+  # Client config: deb [signed-by=...] http://mirror.example.com/ubuntu noble main restricted universe
+  # ---------------------------------------------------------------------------
+  - name: ubuntu-noble
+    path: ubuntu
+    mirror: http://archive.ubuntu.com/ubuntu
+    suites: [noble, noble-updates, noble-security]
+    components: [main, restricted, universe]
+    arches: [amd64]
+    gpg_key: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C
+
+  # ---------------------------------------------------------------------------
+  # Ubuntu 22.04 LTS (Jammy Jellyfish)
+  # ---------------------------------------------------------------------------
+  - name: ubuntu-jammy
+    path: ubuntu
+    mirror: http://archive.ubuntu.com/ubuntu
+    suites: [jammy, jammy-updates, jammy-security]
+    components: [main, restricted, universe]
+    arches: [amd64]
+    gpg_key: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C
+
+  # ---------------------------------------------------------------------------
+  # Ubuntu 20.04 LTS (Focal Fossa)
+  # ---------------------------------------------------------------------------
+  - name: ubuntu-focal
+    path: ubuntu
+    mirror: http://archive.ubuntu.com/ubuntu
+    suites: [focal, focal-updates, focal-security]
+    components: [main, restricted, universe]
+    arches: [amd64]
+    gpg_key: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C
+
+  # ---------------------------------------------------------------------------
+  # Debian 12 (Bookworm)
+  # Note: security updates come from a separate mirror URL; add as a second entry.
+  # ---------------------------------------------------------------------------
+  - name: debian-12-bookworm
+    path: debian
+    mirror: http://deb.debian.org/debian
+    suites: [bookworm, bookworm-updates]
+    components: [main, contrib, non-free, non-free-firmware]
+    arches: [amd64]
+    gpg_key: https://ftp-master.debian.org/keys/archive-key-12.asc
+
+  - name: debian-12-security
+    path: debian-security
+    mirror: http://security.debian.org/debian-security
+    suites: [bookworm-security]
+    components: [main, contrib, non-free, non-free-firmware]
+    arches: [amd64]
+    gpg_key: https://ftp-master.debian.org/keys/archive-key-12-security.asc
+
+  # ---------------------------------------------------------------------------
+  # Debian 11 (Bullseye)
+  # ---------------------------------------------------------------------------
+  - name: debian-11-bullseye
+    path: debian
+    mirror: http://deb.debian.org/debian
+    suites: [bullseye, bullseye-updates]
+    components: [main, contrib, non-free]
+    arches: [amd64]
+    gpg_key: https://ftp-master.debian.org/keys/archive-key-11.asc
+
+  - name: debian-11-security
+    path: debian-security
+    mirror: http://security.debian.org/debian-security
+    suites: [bullseye-security]
+    components: [main, contrib, non-free]
+    arches: [amd64]
+    gpg_key: https://ftp-master.debian.org/keys/archive-key-11-security.asc
+
+  # ---------------------------------------------------------------------------
+  # Zabbix
+  # ---------------------------------------------------------------------------
+  - name: zabbix-70-ubuntu-noble
+    path: zabbix/7.0/ubuntu
+    mirror: https://repo.zabbix.com/zabbix/7.0/ubuntu
+    suites: [noble]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://repo.zabbix.com/zabbix-official-repo.key
+
+  - name: zabbix-70-ubuntu-jammy
+    path: zabbix/7.0/ubuntu
+    mirror: https://repo.zabbix.com/zabbix/7.0/ubuntu
+    suites: [jammy]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://repo.zabbix.com/zabbix-official-repo.key
+
+  - name: zabbix-60-ubuntu-jammy
+    path: zabbix/6.0/ubuntu
+    mirror: https://repo.zabbix.com/zabbix/6.0/ubuntu
+    suites: [jammy]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://repo.zabbix.com/zabbix-official-repo.key
+
+  - name: zabbix-70-debian-12
+    path: zabbix/7.0/debian
+    mirror: https://repo.zabbix.com/zabbix/7.0/debian
+    suites: [bookworm]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://repo.zabbix.com/zabbix-official-repo.key
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL
+  # ---------------------------------------------------------------------------
+  - name: postgresql-ubuntu-jammy
+    path: postgresql/apt
+    mirror: https://apt.postgresql.org/pub/repos/apt
+    suites: [jammy-pgdg]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
+  - name: postgresql-ubuntu-noble
+    path: postgresql/apt
+    mirror: https://apt.postgresql.org/pub/repos/apt
+    suites: [noble-pgdg]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
+  - name: postgresql-debian-12
+    path: postgresql/apt
+    mirror: https://apt.postgresql.org/pub/repos/apt
+    suites: [bookworm-pgdg]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
+  # ---------------------------------------------------------------------------
+  # Docker CE
+  # ---------------------------------------------------------------------------
+  - name: docker-ce-ubuntu-noble
+    path: docker/linux/ubuntu
+    mirror: https://download.docker.com/linux/ubuntu
+    suites: [noble]
+    components: [stable]
+    arches: [amd64]
+    gpg_key: https://download.docker.com/linux/ubuntu/gpg
+
+  - name: docker-ce-ubuntu-jammy
+    path: docker/linux/ubuntu
+    mirror: https://download.docker.com/linux/ubuntu
+    suites: [jammy]
+    components: [stable]
+    arches: [amd64]
+    gpg_key: https://download.docker.com/linux/ubuntu/gpg
+
+  - name: docker-ce-debian-12
+    path: docker/linux/debian
+    mirror: https://download.docker.com/linux/debian
+    suites: [bookworm]
+    components: [stable]
+    arches: [amd64]
+    gpg_key: https://download.docker.com/linux/debian/gpg
+
+  # ---------------------------------------------------------------------------
+  # Elasticsearch
+  # ---------------------------------------------------------------------------
+  - name: elasticsearch-8
+    path: elasticsearch/8.x/apt
+    mirror: https://artifacts.elastic.co/packages/8.x/apt
+    suites: [stable]
+    components: [main]
+    arches: [amd64]
+    gpg_key: https://artifacts.elastic.co/GPG-KEY-elasticsearch
