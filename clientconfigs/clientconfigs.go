@@ -1,5 +1,6 @@
 // Package clientconfigs generates repository client configuration files
-// (yum .repo files and apt sources.list files) that point at the local mirror.
+// (yum .repo files, apt sources.list files, and apt deb822 .sources files)
+// that point at the local mirror.
 package clientconfigs
 
 import (
@@ -13,8 +14,9 @@ import (
 
 // Generate writes client config files under outputDir/client-configs/.
 //
-//	outputDir/client-configs/yum.repos.d/<name>.repo   — one per RPM repo
-//	outputDir/client-configs/apt/sources.list.d/<name>.list — one per DEB repo
+//	outputDir/client-configs/yum.repos.d/<name>.repo              — one per RPM repo
+//	outputDir/client-configs/apt/sources.list.d/<name>.list       — one per DEB repo (legacy format)
+//	outputDir/client-configs/apt/sources.list.d/<name>.sources    — one per DEB repo (deb822 format, Ubuntu 22.04+ / Debian 12+)
 //
 // mirrorURL is the base URL clients use to reach the mirror server,
 // e.g. "http://mirror.example.com". If empty the files are not written.
@@ -89,14 +91,35 @@ func generateDEB(cfg *config.Config, outputDir, mirrorURL string) error {
 		}
 		repoURL := mirrorURL + "/" + strings.TrimLeft(filepath.ToSlash(path), "/")
 
-		var sb strings.Builder
+		// Legacy one-line format — works on all Debian/Ubuntu versions.
+		var legacy strings.Builder
 		for _, suite := range repo.Suites {
-			fmt.Fprintf(&sb, "deb %s %s %s\n", repoURL, suite, strings.Join(repo.Components, " "))
+			fmt.Fprintf(&legacy, "deb %s %s %s\n", repoURL, suite, strings.Join(repo.Components, " "))
+		}
+		dest := filepath.Join(dir, repo.Name+".list")
+		if err := os.WriteFile(dest, []byte(legacy.String()), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", dest, err)
 		}
 
-		dest := filepath.Join(dir, repo.Name+".list")
-		if err := os.WriteFile(dest, []byte(sb.String()), 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", dest, err)
+		// deb822 format — preferred on Ubuntu 22.04+ and Debian 12+.
+		// Multiple suites are combined into a single stanza.
+		// Signed-By references a keyring file on the client machine;
+		// import the GPG key with:
+		//   curl -fsSL <gpg_key_url> | gpg --dearmor -o /etc/apt/keyrings/<name>.gpg
+		keyringPath := fmt.Sprintf("/etc/apt/keyrings/%s.gpg", repo.Name)
+		var deb822 strings.Builder
+		fmt.Fprintf(&deb822, "Types: deb\n")
+		fmt.Fprintf(&deb822, "URIs: %s\n", repoURL)
+		fmt.Fprintf(&deb822, "Suites: %s\n", strings.Join(repo.Suites, " "))
+		fmt.Fprintf(&deb822, "Components: %s\n", strings.Join(repo.Components, " "))
+		if repo.GPGKey != "" {
+			fmt.Fprintf(&deb822, "Signed-By: %s\n", keyringPath)
+			fmt.Fprintf(&deb822, "# Import GPG key: curl -fsSL %s | gpg --dearmor -o %s\n", repo.GPGKey, keyringPath)
+		}
+
+		dest822 := filepath.Join(dir, repo.Name+".sources")
+		if err := os.WriteFile(dest822, []byte(deb822.String()), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", dest822, err)
 		}
 	}
 	return nil
