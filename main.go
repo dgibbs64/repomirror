@@ -14,7 +14,7 @@ import (
 	"repomirror/rpm"
 )
 
-const version = "2026.04.21"
+const version = "2026.04.22"
 
 func main() {
 	// Determine the directory the binary lives in (USB drive root).
