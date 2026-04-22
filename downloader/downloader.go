@@ -11,9 +11,11 @@ import (
 	"hash"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,9 +31,16 @@ type Client struct {
 func New() *Client {
 	return &Client{
 		HTTP: &http.Client{
-			Timeout: 0, // no per-request timeout; large files can be slow
+			// Use a finite request timeout so a stalled transfer eventually retries.
+			Timeout: 45 * time.Minute,
 			Transport: &http.Transport{
+				DialContext: (&net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				TLSHandshakeTimeout:   15 * time.Second,
 				ResponseHeaderTimeout: 30 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
 				IdleConnTimeout:       90 * time.Second,
 			},
 		},
@@ -79,12 +88,19 @@ func (c *Client) DownloadFileP(url, destPath, algo, expected string, prog *Count
 		return nil
 	}
 
-	// If the file exists and checksum matches, skip.
-	if expected != "" {
-		if ok, _ := checksumMatch(destPath, algo, expected); ok {
+	info, statErr := os.Stat(destPath)
+
+	// If the file exists and checksum matches, skip. A small sidecar cache
+	// avoids re-hashing unchanged files on every run.
+	if expected != "" && statErr == nil {
+		if checksumCacheHit(destPath, algo, expected, info) {
 			return nil
 		}
-	} else if _, err := os.Stat(destPath); err == nil {
+		if ok, _ := checksumMatch(destPath, algo, expected); ok {
+			_ = writeChecksumCache(destPath, algo, expected, info)
+			return nil
+		}
+	} else if statErr == nil {
 		// No checksum provided; skip if file already exists.
 		return nil
 	}
@@ -178,7 +194,11 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 		}
 		if !ok {
 			os.Remove(destPath)
+			_ = os.Remove(checksumCachePath(destPath))
 			return fmt.Errorf("checksum mismatch for %s", destPath)
+		}
+		if info, err := os.Stat(destPath); err == nil {
+			_ = writeChecksumCache(destPath, algo, expected, info)
 		}
 	}
 	return nil
@@ -211,4 +231,44 @@ func checksumMatch(path, algo, expected string) (bool, error) {
 	}
 	actual := hex.EncodeToString(h.Sum(nil))
 	return strings.EqualFold(actual, expected), nil
+}
+
+func checksumCachePath(path string) string {
+	return path + ".repomirror.checksum"
+}
+
+func checksumCacheHit(path, algo, expected string, info os.FileInfo) bool {
+	b, err := os.ReadFile(checksumCachePath(path))
+	if err != nil {
+		return false
+	}
+	parts := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(parts) != 4 {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(parts[0]), strings.TrimSpace(algo)) {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(parts[1]), strings.TrimSpace(expected)) {
+		return false
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(parts[2]), 10, 64)
+	if err != nil || size != info.Size() {
+		return false
+	}
+	mtime, err := strconv.ParseInt(strings.TrimSpace(parts[3]), 10, 64)
+	if err != nil || mtime != info.ModTime().UnixNano() {
+		return false
+	}
+	return true
+}
+
+func writeChecksumCache(path, algo, expected string, info os.FileInfo) error {
+	content := strings.Join([]string{
+		strings.ToLower(strings.TrimSpace(algo)),
+		strings.ToLower(strings.TrimSpace(expected)),
+		strconv.FormatInt(info.Size(), 10),
+		strconv.FormatInt(info.ModTime().UnixNano(), 10),
+	}, "\n") + "\n"
+	return os.WriteFile(checksumCachePath(path), []byte(content), 0o644)
 }

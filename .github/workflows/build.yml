@@ -24,8 +24,20 @@ jobs:
       - name: Build
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o repomirror .
 
+      - name: Package release artifact
+        run: |
+          set -euo pipefail
+          PKG="repomirror-${GITHUB_REF_NAME}-linux-amd64"
+          mkdir -p dist
+          cp repomirror "dist/${PKG}"
+          tar -C dist -czf "dist/${PKG}.tar.gz" "${PKG}"
+          sha256sum "dist/${PKG}.tar.gz" > "dist/${PKG}.tar.gz.sha256"
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: repomirror
+          files: |
+            repomirror
+            dist/*.tar.gz
+            dist/*.sha256
           generate_release_notes: true
