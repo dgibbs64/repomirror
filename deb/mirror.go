@@ -25,6 +25,8 @@ func Mirror(mirrorURL, destDir, repoName, gpgKeyURL string, suites, components, 
 	mirrorURL = strings.TrimRight(mirrorURL, "/")
 
 	log.Printf("[deb] %s  →  %s", mirrorURL, destDir)
+	log.Printf("[deb] %s: suites=%s components=%s arches=%s workers=%d",
+		repoName, formatListForLog(suites), formatListForLog(components), formatListForLog(arches), workers)
 
 	// Fetch and import the GPG key.
 	keysDir := filepath.Join(destDir, "gpg-keys")
@@ -417,4 +419,11 @@ func writeFile(path string, data []byte) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)
+}
+
+func formatListForLog(values []string) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	return strings.Join(values, ",")
 }

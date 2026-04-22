@@ -16,7 +16,6 @@ deb_repos:
 
   # ---------------------------------------------------------------------------
   # Ubuntu 24.04 LTS (Noble Numbat)
-  # Client config: deb [signed-by=...] http://mirror.example.com/ubuntu noble main restricted universe
   # ---------------------------------------------------------------------------
   - name: ubuntu-noble
     path: ubuntu
