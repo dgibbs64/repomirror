@@ -31,7 +31,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o repomirror .
 ./repomirror -init
 ```
 
-This writes an example `mirrors.yaml` next to the binary.
+This writes an example config file next to the binary. By default, repomirror
+accepts either `mirrors.yaml` or `mirrors.yml`.
 
 ### Dry run (preview only)
 
@@ -51,7 +52,7 @@ Parses repository metadata and shows package counts without downloading anything
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-config` | `mirrors.yaml` (next to binary) | Path to config file |
+| `-config` | `mirrors.yaml` or `mirrors.yml` (next to binary) | Path to config file |
 | `-init` | | Write example config and exit |
 | `-dry-run` | | Preview downloads without writing files |
 | `-version` | | Print version and exit |

@@ -24,10 +24,11 @@ func main() {
 		log.Fatalf("cannot determine executable path: %v", err)
 	}
 	binDir := filepath.Dir(execPath)
+	defaultCfgPath := defaultConfigPath(binDir)
 
 	// Flags
-	cfgPath := flag.String("config", filepath.Join(binDir, "mirrors.yaml"), "path to mirrors.yaml config file")
-	genConfig := flag.Bool("init", false, "write an example mirrors.yaml to the config path and exit")
+	cfgPath := flag.String("config", defaultCfgPath, "path to mirrors.yaml or mirrors.yml config file")
+	genConfig := flag.Bool("init", false, "write an example config file to the config path and exit")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	dryRun := flag.Bool("dry-run", false, "parse metadata and show what would be downloaded; create directory structure but skip actual downloads")
 	flag.Parse()
@@ -139,6 +140,18 @@ func main() {
 		log.Println("Mirror completed with errors (see above).")
 	}
 	os.Exit(exitCode)
+}
+
+func defaultConfigPath(binDir string) string {
+	yamlPath := filepath.Join(binDir, "mirrors.yaml")
+	ymlPath := filepath.Join(binDir, "mirrors.yml")
+	if _, err := os.Stat(yamlPath); err == nil {
+		return yamlPath
+	}
+	if _, err := os.Stat(ymlPath); err == nil {
+		return ymlPath
+	}
+	return yamlPath
 }
 
 func lockOutputTree(outputDir string) (func(), error) {

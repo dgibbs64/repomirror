@@ -2,6 +2,7 @@
 # Copy the entries you need into the rpm_repos section of your mirrors.yaml.
 # All examples are for x86_64. Adjust the path/base_url for other arches (e.g. aarch64).
 # Add 'enable: false' under any repo to skip it temporarily during testing.
+# Not all third-party YUM repos publish official mirrorlist/metalink endpoints.
 
 rpm_repos:
 
@@ -15,9 +16,9 @@ rpm_repos:
     enable: true
     path: epel/9/Everything/x86_64
     base_url: https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/
-    mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=epel-9&arch=x86_64
-    metalink: https://mirrors.fedoraproject.org/metalink?repo=epel-9&arch=x86_64
-    preferred_mirror: dl.fedoraproject.org
+    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=epel-9&arch=x86_64
+    # metalink: https://mirrors.fedoraproject.org/metalink?repo=epel-9&arch=x86_64
+    # preferred_mirror: dl.fedoraproject.org
     gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
 
   # ---------------------------------------------------------------------------
@@ -201,12 +202,18 @@ rpm_repos:
     enable: true
     path: fedora/releases/42/Everything/x86_64/os
     base_url: https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Everything/x86_64/os/
+    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=fedora-42&arch=x86_64
+    # metalink: https://mirrors.fedoraproject.org/metalink?repo=fedora-42&arch=x86_64
+    # preferred_mirror: dl.fedoraproject.org
     gpg_key: https://getfedora.org/static/keys/RPM-GPG-KEY-fedora-42-primary
 
   - name: fedora-42-updates
     enable: true
     path: fedora/updates/42/Everything/x86_64
     base_url: https://dl.fedoraproject.org/pub/fedora/linux/updates/42/Everything/x86_64/
+    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=updates-released-f42&arch=x86_64
+    # metalink: https://mirrors.fedoraproject.org/metalink?repo=updates-released-f42&arch=x86_64
+    # preferred_mirror: dl.fedoraproject.org
     gpg_key: https://getfedora.org/static/keys/RPM-GPG-KEY-fedora-42-primary
 
   # ---------------------------------------------------------------------------
@@ -216,12 +223,18 @@ rpm_repos:
     enable: true
     path: epel/9/Everything/x86_64
     base_url: https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/
+    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=epel-9&arch=x86_64
+    # metalink: https://mirrors.fedoraproject.org/metalink?repo=epel-9&arch=x86_64
+    # preferred_mirror: dl.fedoraproject.org
     gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
 
   - name: epel-8
     enable: true
     path: epel/8/Everything/x86_64
     base_url: https://dl.fedoraproject.org/pub/epel/8/Everything/x86_64/
+    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=epel-8&arch=x86_64
+    # metalink: https://mirrors.fedoraproject.org/metalink?repo=epel-8&arch=x86_64
+    # preferred_mirror: dl.fedoraproject.org
     gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-8
 
   # ---------------------------------------------------------------------------

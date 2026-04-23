@@ -5,9 +5,6 @@
 # maps directly to the URL path clients will use, e.g.:
 #   deb http://example.com/ubuntu jammy main
 #   baseurl=http://example.com/centos/9-stream/BaseOS/x86_64/os/
-#
-# NOTE: Splunk Universal Forwarder has no public mirrorable repo — packages
-# must be downloaded manually from splunk.com (license agreement required).
 
 output_dir: ./mirror             # root served by nginx/apache
 mirror_url: http://mirror.example.com  # base URL clients use to reach this server
@@ -49,6 +46,9 @@ rpm_repos:
   - name: epel-9
     path: epel/9/Everything/x86_64
     base_url: https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/
+    mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=epel-9&arch=x86_64
+    metalink: https://mirrors.fedoraproject.org/metalink?repo=epel-9&arch=x86_64
+    preferred_mirror: dl.fedoraproject.org
     gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
 
 deb_repos:
@@ -59,6 +59,8 @@ deb_repos:
     enable: true
     path: ubuntu
     mirror: http://archive.ubuntu.com/ubuntu
+    mirrorlist: http://mirrors.ubuntu.com/mirrors.txt
+    preferred_mirror: archive.ubuntu.com
     suites:
       - jammy
       - jammy-updates
