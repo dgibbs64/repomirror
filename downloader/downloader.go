@@ -326,6 +326,12 @@ func (tr *transferReader) Read(p []byte) (int, error) {
 }
 
 func (tr *transferReader) report(now time.Time) {
+	// When a repo counter is active, progress is already shown on the live line.
+	// Extra log lines here can interleave and make terminal output look messy.
+	if tr.c != nil {
+		return
+	}
+
 	elapsed := now.Sub(tr.lastReport)
 	if elapsed <= 0 {
 		elapsed = time.Second

@@ -88,21 +88,21 @@ func (c *Counter) Log() {
 			activeSz := c.activeSz.Load()
 			if activeSz > 0 {
 				activePct := float64(activeTx) / float64(activeSz) * 100
-				line += fmt.Sprintf(" file %s %s/%s (%.1f%%)", activeName, fmtBytes(float64(activeTx)), fmtBytes(float64(activeSz)), activePct)
+				line += fmt.Sprintf(" | file %s %s/%s (%.1f%%)", activeName, fmtBytes(float64(activeTx)), fmtBytes(float64(activeSz)), activePct)
 			} else {
-				line += fmt.Sprintf(" file %s %s", activeName, fmtBytes(float64(activeTx)))
+				line += fmt.Sprintf(" | file %s %s", activeName, fmtBytes(float64(activeTx)))
 			}
 		}
 	}
-	// %-80s pads/truncates so we always overwrite the full previous line.
-	fmt.Fprintf(os.Stderr, "\r%-80s", line)
+	// Clear the entire terminal line before rendering updated progress.
+	fmt.Fprintf(os.Stderr, "\r\033[K%s", line)
 }
 
 // Finish clears the live progress line and prints a final summary via the
 // standard logger (which adds a timestamp and newline).
 func (c *Counter) Finish() {
 	// Erase the in-place progress line.
-	fmt.Fprintf(os.Stderr, "\r%-80s\r", "")
+	fmt.Fprintf(os.Stderr, "\r\033[K")
 	elapsed := time.Since(c.start)
 	bytes := c.bytes.Load()
 	var avgStr string

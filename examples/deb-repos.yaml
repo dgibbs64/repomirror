@@ -8,6 +8,7 @@ deb_repos:
   # Ubuntu 26.04 LTS (Resolute Raccoon)
   # ---------------------------------------------------------------------------
   - name: ubuntu-resolute
+    enable: true
     path: ubuntu
     mirror: http://archive.ubuntu.com/ubuntu
     suites: [resolute, resolute-updates, resolute-security]
@@ -19,6 +20,7 @@ deb_repos:
   # Ubuntu 24.04 LTS (Noble Numbat)
   # ---------------------------------------------------------------------------
   - name: ubuntu-noble
+    enable: true
     path: ubuntu
     mirror: http://archive.ubuntu.com/ubuntu
     suites: [noble, noble-updates, noble-security]
@@ -30,6 +32,7 @@ deb_repos:
   # Ubuntu 22.04 LTS (Jammy Jellyfish)
   # ---------------------------------------------------------------------------
   - name: ubuntu-jammy
+    enable: true
     path: ubuntu
     mirror: http://archive.ubuntu.com/ubuntu
     suites: [jammy, jammy-updates, jammy-security]
@@ -41,6 +44,7 @@ deb_repos:
   # Ubuntu 20.04 LTS (Focal Fossa)
   # ---------------------------------------------------------------------------
   - name: ubuntu-focal
+    enable: true
     path: ubuntu
     mirror: http://archive.ubuntu.com/ubuntu
     suites: [focal, focal-updates, focal-security]
@@ -53,6 +57,7 @@ deb_repos:
   # Note: security updates come from a separate mirror URL; add as a second entry.
   # ---------------------------------------------------------------------------
   - name: debian-12-bookworm
+    enable: true
     path: debian
     mirror: http://deb.debian.org/debian
     suites: [bookworm, bookworm-updates]
@@ -61,6 +66,7 @@ deb_repos:
     gpg_key: https://ftp-master.debian.org/keys/archive-key-12.asc
 
   - name: debian-12-security
+    enable: true
     path: debian-security
     mirror: http://security.debian.org/debian-security
     suites: [bookworm-security]
@@ -72,6 +78,7 @@ deb_repos:
   # Debian 11 (Bullseye)
   # ---------------------------------------------------------------------------
   - name: debian-11-bullseye
+    enable: true
     path: debian
     mirror: http://deb.debian.org/debian
     suites: [bullseye, bullseye-updates]
@@ -80,6 +87,7 @@ deb_repos:
     gpg_key: https://ftp-master.debian.org/keys/archive-key-11.asc
 
   - name: debian-11-security
+    enable: true
     path: debian-security
     mirror: http://security.debian.org/debian-security
     suites: [bullseye-security]
@@ -91,6 +99,7 @@ deb_repos:
   # Zabbix
   # ---------------------------------------------------------------------------
   - name: zabbix-70-ubuntu-resolute
+    enable: true
     path: zabbix/7.0/ubuntu
     mirror: https://repo.zabbix.com/zabbix/7.0/ubuntu
     suites: [resolute]
@@ -99,6 +108,7 @@ deb_repos:
     gpg_key: https://repo.zabbix.com/zabbix-official-repo.key
 
   - name: zabbix-70-ubuntu-noble
+    enable: true
     path: zabbix/7.0/ubuntu
     mirror: https://repo.zabbix.com/zabbix/7.0/ubuntu
     suites: [noble]
@@ -107,6 +117,7 @@ deb_repos:
     gpg_key: https://repo.zabbix.com/zabbix-official-repo.key
 
   - name: zabbix-70-ubuntu-jammy
+    enable: true
     path: zabbix/7.0/ubuntu
     mirror: https://repo.zabbix.com/zabbix/7.0/ubuntu
     suites: [jammy]
@@ -115,6 +126,7 @@ deb_repos:
     gpg_key: https://repo.zabbix.com/zabbix-official-repo.key
 
   - name: zabbix-60-ubuntu-jammy
+    enable: true
     path: zabbix/6.0/ubuntu
     mirror: https://repo.zabbix.com/zabbix/6.0/ubuntu
     suites: [jammy]
@@ -123,6 +135,7 @@ deb_repos:
     gpg_key: https://repo.zabbix.com/zabbix-official-repo.key
 
   - name: zabbix-70-debian-12
+    enable: true
     path: zabbix/7.0/debian
     mirror: https://repo.zabbix.com/zabbix/7.0/debian
     suites: [bookworm]
@@ -134,6 +147,7 @@ deb_repos:
   # PostgreSQL
   # ---------------------------------------------------------------------------
   - name: postgresql-ubuntu-resolute
+    enable: true
     path: postgresql/apt
     mirror: https://apt.postgresql.org/pub/repos/apt
     suites: [resolute-pgdg]
@@ -142,6 +156,7 @@ deb_repos:
     gpg_key: https://www.postgresql.org/media/keys/ACCC4CF8.asc
 
   - name: postgresql-ubuntu-jammy
+    enable: true
     path: postgresql/apt
     mirror: https://apt.postgresql.org/pub/repos/apt
     suites: [jammy-pgdg]
@@ -150,6 +165,7 @@ deb_repos:
     gpg_key: https://www.postgresql.org/media/keys/ACCC4CF8.asc
 
   - name: postgresql-ubuntu-noble
+    enable: true
     path: postgresql/apt
     mirror: https://apt.postgresql.org/pub/repos/apt
     suites: [noble-pgdg]
@@ -158,6 +174,7 @@ deb_repos:
     gpg_key: https://www.postgresql.org/media/keys/ACCC4CF8.asc
 
   - name: postgresql-debian-12
+    enable: true
     path: postgresql/apt
     mirror: https://apt.postgresql.org/pub/repos/apt
     suites: [bookworm-pgdg]
@@ -169,6 +186,7 @@ deb_repos:
   # Docker CE
   # ---------------------------------------------------------------------------
   - name: docker-ce-ubuntu-resolute
+    enable: true
     path: docker/linux/ubuntu
     mirror: https://download.docker.com/linux/ubuntu
     suites: [resolute]
@@ -177,6 +195,7 @@ deb_repos:
     gpg_key: https://download.docker.com/linux/ubuntu/gpg
 
   - name: docker-ce-ubuntu-noble
+    enable: true
     path: docker/linux/ubuntu
     mirror: https://download.docker.com/linux/ubuntu
     suites: [noble]
@@ -185,6 +204,7 @@ deb_repos:
     gpg_key: https://download.docker.com/linux/ubuntu/gpg
 
   - name: docker-ce-ubuntu-jammy
+    enable: true
     path: docker/linux/ubuntu
     mirror: https://download.docker.com/linux/ubuntu
     suites: [jammy]
@@ -193,6 +213,7 @@ deb_repos:
     gpg_key: https://download.docker.com/linux/ubuntu/gpg
 
   - name: docker-ce-debian-12
+    enable: true
     path: docker/linux/debian
     mirror: https://download.docker.com/linux/debian
     suites: [bookworm]
@@ -204,6 +225,7 @@ deb_repos:
   # Elasticsearch
   # ---------------------------------------------------------------------------
   - name: elasticsearch-8
+    enable: true
     path: elasticsearch/8.x/apt
     mirror: https://artifacts.elastic.co/packages/8.x/apt
     suites: [stable]
@@ -216,6 +238,7 @@ deb_repos:
   # One repo contains all Microsoft Linux packages.
   # ---------------------------------------------------------------------------
   - name: microsoft-prod-ubuntu-resolute
+    enable: true
     path: microsoft/ubuntu/26.04/prod
     mirror: https://packages.microsoft.com/ubuntu/26.04/prod
     suites: [resolute]
@@ -224,6 +247,7 @@ deb_repos:
     gpg_key: https://packages.microsoft.com/keys/microsoft.asc
 
   - name: microsoft-prod-ubuntu-noble
+    enable: true
     path: microsoft/ubuntu/24.04/prod
     mirror: https://packages.microsoft.com/ubuntu/24.04/prod
     suites: [noble]
@@ -232,6 +256,7 @@ deb_repos:
     gpg_key: https://packages.microsoft.com/keys/microsoft.asc
 
   - name: microsoft-prod-ubuntu-jammy
+    enable: true
     path: microsoft/ubuntu/22.04/prod
     mirror: https://packages.microsoft.com/ubuntu/22.04/prod
     suites: [jammy]
@@ -240,6 +265,7 @@ deb_repos:
     gpg_key: https://packages.microsoft.com/keys/microsoft.asc
 
   - name: microsoft-prod-debian-12
+    enable: true
     path: microsoft/debian/12/prod
     mirror: https://packages.microsoft.com/debian/12/prod
     suites: [bookworm]
@@ -251,6 +277,7 @@ deb_repos:
   # HashiCorp (Terraform, Vault, Consul, Packer, Nomad)
   # ---------------------------------------------------------------------------
   - name: hashicorp-ubuntu-resolute
+    enable: true
     path: hashicorp/ubuntu/resolute
     mirror: https://apt.releases.hashicorp.com
     suites: [resolute]
@@ -259,6 +286,7 @@ deb_repos:
     gpg_key: https://apt.releases.hashicorp.com/gpg
 
   - name: hashicorp-ubuntu-noble
+    enable: true
     path: hashicorp/ubuntu/noble
     mirror: https://apt.releases.hashicorp.com
     suites: [noble]
@@ -267,6 +295,7 @@ deb_repos:
     gpg_key: https://apt.releases.hashicorp.com/gpg
 
   - name: hashicorp-ubuntu-jammy
+    enable: true
     path: hashicorp/ubuntu/jammy
     mirror: https://apt.releases.hashicorp.com
     suites: [jammy]
@@ -275,6 +304,7 @@ deb_repos:
     gpg_key: https://apt.releases.hashicorp.com/gpg
 
   - name: hashicorp-debian-12
+    enable: true
     path: hashicorp/debian/bookworm
     mirror: https://apt.releases.hashicorp.com
     suites: [bookworm]
@@ -286,6 +316,7 @@ deb_repos:
   # Grafana (Grafana, Loki, Promtail, Tempo, Mimir)
   # ---------------------------------------------------------------------------
   - name: grafana
+    enable: true
     path: grafana/apt
     mirror: https://apt.grafana.com
     suites: [stable]
@@ -297,6 +328,7 @@ deb_repos:
   # InfluxDB / Telegraf
   # ---------------------------------------------------------------------------
   - name: influxdb
+    enable: true
     path: influxdb/apt
     mirror: https://repos.influxdata.com/ubuntu
     suites: [stable]
@@ -308,6 +340,7 @@ deb_repos:
   # Nginx (official)
   # ---------------------------------------------------------------------------
   - name: nginx-stable-ubuntu-resolute
+    enable: true
     path: nginx/ubuntu
     mirror: https://nginx.org/packages/ubuntu
     suites: [resolute]
@@ -316,6 +349,7 @@ deb_repos:
     gpg_key: https://nginx.org/keys/nginx_signing.key
 
   - name: nginx-stable-ubuntu-noble
+    enable: true
     path: nginx/ubuntu
     mirror: https://nginx.org/packages/ubuntu
     suites: [noble]
@@ -324,6 +358,7 @@ deb_repos:
     gpg_key: https://nginx.org/keys/nginx_signing.key
 
   - name: nginx-stable-debian-12
+    enable: true
     path: nginx/debian
     mirror: https://nginx.org/packages/debian
     suites: [bookworm]
@@ -335,6 +370,7 @@ deb_repos:
   # MariaDB
   # ---------------------------------------------------------------------------
   - name: mariadb-1011-ubuntu-resolute
+    enable: true
     path: mariadb/apt/10.11
     mirror: https://downloads.mariadb.com/MariaDB/mariadb-10.11/repo/ubuntu
     suites: [resolute]
@@ -343,6 +379,7 @@ deb_repos:
     gpg_key: https://supplychain.mariadb.com/MariaDB-Server-GPG-KEY
 
   - name: mariadb-1011-ubuntu-jammy
+    enable: true
     path: mariadb/apt/10.11
     mirror: https://downloads.mariadb.com/MariaDB/mariadb-10.11/repo/ubuntu
     suites: [jammy]
@@ -351,6 +388,7 @@ deb_repos:
     gpg_key: https://supplychain.mariadb.com/MariaDB-Server-GPG-KEY
 
   - name: mariadb-1011-debian-12
+    enable: true
     path: mariadb/apt/10.11
     mirror: https://downloads.mariadb.com/MariaDB/mariadb-10.11/repo/debian
     suites: [bookworm]
@@ -362,6 +400,7 @@ deb_repos:
   # MongoDB 7.0
   # ---------------------------------------------------------------------------
   - name: mongodb-70-ubuntu-resolute
+    enable: true
     path: mongodb/apt/ubuntu/resolute/mongodb-org/7.0
     mirror: https://repo.mongodb.org/apt/ubuntu
     suites: [resolute/mongodb-org/7.0]
@@ -370,6 +409,7 @@ deb_repos:
     gpg_key: https://www.mongodb.org/static/pgp/server-7.0.asc
 
   - name: mongodb-70-ubuntu-jammy
+    enable: true
     path: mongodb/apt/ubuntu/jammy/mongodb-org/7.0
     mirror: https://repo.mongodb.org/apt/ubuntu
     suites: [jammy/mongodb-org/7.0]
@@ -378,6 +418,7 @@ deb_repos:
     gpg_key: https://www.mongodb.org/static/pgp/server-7.0.asc
 
   - name: mongodb-70-debian-12
+    enable: true
     path: mongodb/apt/debian/bookworm/mongodb-org/7.0
     mirror: https://repo.mongodb.org/apt/debian
     suites: [bookworm/mongodb-org/7.0]
@@ -389,6 +430,7 @@ deb_repos:
   # Kubernetes
   # ---------------------------------------------------------------------------
   - name: kubernetes-1.32-ubuntu
+    enable: true
     path: kubernetes/1.32/apt
     mirror: https://pkgs.k8s.io/core:/stable:/v1.32/deb
     suites: [/]
@@ -397,6 +439,7 @@ deb_repos:
     gpg_key: https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key
 
   - name: kubernetes-1.31-ubuntu
+    enable: true
     path: kubernetes/1.31/apt
     mirror: https://pkgs.k8s.io/core:/stable:/v1.31/deb
     suites: [/]
