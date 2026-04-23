@@ -21,7 +21,10 @@ type RPMRepo struct {
   Enable  *bool    `yaml:"enable"`   // nil or true => enabled, false => skipped
 	Name    string   `yaml:"name"`
 	Path    string   `yaml:"path"`     // URL path served by the webserver, e.g. rocky/9/BaseOS/x86_64/os
-	BaseURL string   `yaml:"base_url"`
+  BaseURL string   `yaml:"base_url"`       // explicit mirror/base URL; preferred when set
+  Mirrorlist string `yaml:"mirrorlist"`    // optional URL returning plain-text mirror URLs
+  Metalink string   `yaml:"metalink"`      // optional URL returning metalink XML mirror URLs
+  PreferredMirror string `yaml:"preferred_mirror"` // optional host/substr preferred when using mirrorlist/metalink
 	Arches  []string `yaml:"arches"`
 	GPGKey  string   `yaml:"gpg_key"` // URL to the GPG public key
 }
@@ -88,6 +91,10 @@ rpm_repos:
     enable: true
     path: rocky/9/BaseOS/x86_64/os
     base_url: https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/
+    # Alternative auto-mirror source options (optional):
+    # mirrorlist: https://mirrors.example.org/mirrorlist.txt
+    # metalink: https://mirrors.example.org/repo.metalink
+    # preferred_mirror: dl.rockylinux.org
     gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-9
 
   - name: rocky-9-appstream

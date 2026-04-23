@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -59,11 +60,20 @@ type pkgLocation struct {
 // Mirror downloads a YUM/DNF repository rooted at baseURL into destDir.
 // It mirrors the repodata directory exactly and all referenced RPM packages,
 // preserving the upstream directory layout.
-func Mirror(baseURL, destDir, repoName, gpgKeyURL string, workers int, dl *downloader.Client) error {
-	baseURL = strings.TrimRight(baseURL, "/")
+func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, destDir, repoName, gpgKeyURL string, workers int, dl *downloader.Client) error {
+	sources, err := resolveRPMSourceURLs(baseURL, mirrorlistURL, metalinkURL, preferredMirror, dl)
+	if err != nil {
+		return fmt.Errorf("[rpm] %s: resolve sources: %w", repoName, err)
+	}
+	ss := newSourceSet(sources)
+
+	baseURL = strings.TrimRight(ss.primary(), "/")
 
 	log.Printf("[rpm] %s  →  %s", baseURL, destDir)
 	log.Printf("[rpm] %s: preparing metadata (workers=%d)", repoName, workers)
+	if len(sources) > 1 {
+		log.Printf("[rpm] %s: source failover enabled (%d sources)", repoName, len(sources))
+	}
 
 	// Fetch and import the GPG key.
 	keysDir := filepath.Join(destDir, "gpg-keys")
@@ -72,15 +82,17 @@ func Mirror(baseURL, destDir, repoName, gpgKeyURL string, workers int, dl *downl
 	}
 
 	// Fetch repomd.xml (always into memory so dry-run can parse it).
-	repomdURL := baseURL + "/repodata/repomd.xml"
+	repomdRel := "repodata/repomd.xml"
+	repomdURL := baseURL + "/" + repomdRel
 	repomdDest := filepath.Join(destDir, "repodata", "repomd.xml")
 	log.Printf("[rpm] %s: fetching repomd.xml", repoName)
-	repomdData, err := dl.FetchBytes(repomdURL)
+	repomdData, usedBase, err := fetchBytesFromSources(dl, ss, repomdRel)
 	if err != nil {
 		return fmt.Errorf("[rpm] %s: fetch repomd.xml: %w", repoName, err)
 	}
+	repomdURL = strings.TrimRight(usedBase, "/") + "/" + repomdRel
 	if !dl.DryRun {
-		if err := downloadForce(dl, repomdURL, repomdDest); err != nil {
+		if err := downloadFileFromSources(dl, ss, repomdRel, repomdDest, "", "", nil); err != nil {
 			return fmt.Errorf("[rpm] %s: save repomd.xml: %w", repoName, err)
 		}
 	} else {
@@ -89,9 +101,12 @@ func Mirror(baseURL, destDir, repoName, gpgKeyURL string, workers int, dl *downl
 
 	// Download repomd.xml.asc / repomd.xml.key (signature) if present.
 	for _, sigSuffix := range []string{".asc", ".key", ".sig"} {
+		sigRel := repomdRel + sigSuffix
 		sigURL := repomdURL + sigSuffix
 		sigDest := repomdDest + sigSuffix
-		_ = dl.DownloadFile(sigURL, sigDest, "", "")
+		if err := downloadFileFromSources(dl, ss, sigRel, sigDest, "", "", nil); err != nil && dl.DryRun {
+			log.Printf("[dry-run] would download: %s", sigURL)
+		}
 	}
 	var rmd repoMD
 	if err := xml.Unmarshal(repomdData, &rmd); err != nil {
@@ -101,22 +116,25 @@ func Mirror(baseURL, destDir, repoName, gpgKeyURL string, workers int, dl *downl
 
 	// Download all metadata files listed in repomd.xml.
 	// Track the primary metadata URL/dest for later parsing.
-	var primaryURL, primaryDest string
+	var primaryRel, primaryDest string
 	for _, d := range rmd.Data {
 		href := strings.TrimLeft(d.Location.Href, "/")
-		fileURL := baseURL + "/" + href
-		fileDest := filepath.Join(destDir, filepath.FromSlash(href))
-		if err := dl.DownloadFile(fileURL, fileDest, d.Checksum.Type, strings.TrimSpace(d.Checksum.Value)); err != nil {
+		fileDest, err := downloader.SafeJoin(destDir, filepath.FromSlash(href))
+		if err != nil {
+			log.Printf("[rpm] %s: metadata %s: %v", repoName, href, err)
+			continue
+		}
+		if err := downloadFileFromSources(dl, ss, href, fileDest, d.Checksum.Type, strings.TrimSpace(d.Checksum.Value), nil); err != nil {
 			log.Printf("[rpm] %s: metadata %s: %v", repoName, href, err)
 			continue
 		}
 		if d.Type == "primary" {
-			primaryURL = fileURL
+			primaryRel = href
 			primaryDest = fileDest
 		}
 	}
 
-	if primaryURL == "" {
+	if primaryRel == "" {
 		return fmt.Errorf("[rpm] %s: no primary metadata found in repomd.xml", repoName)
 	}
 	log.Printf("[rpm] %s: parsing primary metadata", repoName)
@@ -125,11 +143,11 @@ func Mirror(baseURL, destDir, repoName, gpgKeyURL string, workers int, dl *downl
 	// was never written to disk.
 	var packages []rpmPkg
 	if dl.DryRun {
-		data, err := dl.FetchBytes(primaryURL)
+		data, _, err := fetchBytesFromSources(dl, ss, primaryRel)
 		if err != nil {
 			return fmt.Errorf("[rpm] %s: fetch primary for parse: %w", repoName, err)
 		}
-		packages, err = parsePrimaryBytes(data, fileExt(primaryURL))
+		packages, err = parsePrimaryBytes(data, fileExt(primaryRel))
 		if err != nil {
 			return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, err)
 		}
@@ -171,9 +189,15 @@ func Mirror(baseURL, destDir, repoName, gpgKeyURL string, workers int, dl *downl
 			defer wg.Done()
 			for j := range jobs {
 				href := strings.TrimLeft(j.pkg.Location.Href, "/")
-				pkgURL := baseURL + "/" + href
-				pkgDest := filepath.Join(destDir, filepath.FromSlash(href))
-				if err := dl.DownloadFileP(pkgURL, pkgDest, j.pkg.Checksum.Type, strings.TrimSpace(j.pkg.Checksum.Value), prog); err != nil {
+				pkgDest, err := downloader.SafeJoin(destDir, filepath.FromSlash(href))
+				if err != nil {
+					errs <- fmt.Errorf("%s: %w", href, err)
+					if prog != nil {
+						prog.Done()
+					}
+					continue
+				}
+				if err := downloadFileFromSources(dl, ss, href, pkgDest, j.pkg.Checksum.Type, strings.TrimSpace(j.pkg.Checksum.Value), prog); err != nil {
 					errs <- fmt.Errorf("%s: %w", href, err)
 				}
 				if prog != nil {
@@ -201,6 +225,166 @@ func Mirror(baseURL, destDir, repoName, gpgKeyURL string, workers int, dl *downl
 
 	log.Printf("[rpm] %s: done", repoName)
 	return nil
+}
+
+type sourceSet struct {
+	mu   sync.Mutex
+	urls []string
+}
+
+func newSourceSet(urls []string) *sourceSet {
+	return &sourceSet{urls: append([]string(nil), urls...)}
+}
+
+func (s *sourceSet) primary() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.urls) == 0 {
+		return ""
+	}
+	return s.urls[0]
+}
+
+func (s *sourceSet) ordered() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.urls...)
+}
+
+func (s *sourceSet) markSuccess(baseURL string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx := -1
+	for i, u := range s.urls {
+		if u == baseURL {
+			idx = i
+			break
+		}
+	}
+	if idx <= 0 {
+		return
+	}
+	s.urls[0], s.urls[idx] = s.urls[idx], s.urls[0]
+}
+
+func downloadFileFromSources(dl *downloader.Client, ss *sourceSet, relPath, dest, algo, expected string, prog *downloader.Counter) error {
+	rel := strings.TrimLeft(relPath, "/")
+	ordered := ss.ordered()
+	var lastErr error
+	for _, base := range ordered {
+		url := strings.TrimRight(base, "/") + "/" + rel
+		if err := dl.DownloadFileP(url, dest, algo, expected, prog); err != nil {
+			lastErr = err
+			continue
+		}
+		ss.markSuccess(base)
+		return nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no source URLs configured")
+	}
+	return lastErr
+}
+
+func fetchBytesFromSources(dl *downloader.Client, ss *sourceSet, relPath string) ([]byte, string, error) {
+	rel := strings.TrimLeft(relPath, "/")
+	ordered := ss.ordered()
+	var lastErr error
+	for _, base := range ordered {
+		url := strings.TrimRight(base, "/") + "/" + rel
+		data, err := dl.FetchBytes(url)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		ss.markSuccess(base)
+		return data, base, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no source URLs configured")
+	}
+	return nil, "", lastErr
+}
+
+func resolveRPMSourceURLs(baseURL, mirrorlistURL, metalinkURL, preferred string, dl *downloader.Client) ([]string, error) {
+	var sources []string
+	add := func(raw string) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return
+		}
+		raw = strings.TrimRight(raw, "/")
+		if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
+			return
+		}
+		for _, existing := range sources {
+			if existing == raw {
+				return
+			}
+		}
+		sources = append(sources, raw)
+	}
+
+	add(baseURL)
+
+	if mirrorlistURL != "" {
+		data, err := dl.FetchBytes(mirrorlistURL)
+		if err != nil {
+			return nil, fmt.Errorf("fetch mirrorlist: %w", err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			add(line)
+		}
+	}
+
+	if metalinkURL != "" {
+		data, err := dl.FetchBytes(metalinkURL)
+		if err != nil {
+			return nil, fmt.Errorf("fetch metalink: %w", err)
+		}
+		var ml struct {
+			URLs []struct {
+				Protocol string `xml:"protocol,attr"`
+				Value    string `xml:",chardata"`
+			} `xml:"files>file>resources>url"`
+		}
+		if err := xml.Unmarshal(data, &ml); err != nil {
+			return nil, fmt.Errorf("parse metalink: %w", err)
+		}
+		for _, u := range ml.URLs {
+			p := strings.ToLower(strings.TrimSpace(u.Protocol))
+			if p != "" && p != "http" && p != "https" {
+				continue
+			}
+			add(u.Value)
+		}
+	}
+
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("no RPM source URL configured (set base_url, mirrorlist, or metalink)")
+	}
+
+	if preferred != "" {
+		preferred = strings.ToLower(strings.TrimSpace(preferred))
+		slices.SortStableFunc(sources, func(a, b string) int {
+			aa := strings.Contains(strings.ToLower(a), preferred)
+			bb := strings.Contains(strings.ToLower(b), preferred)
+			switch {
+			case aa && !bb:
+				return -1
+			case !aa && bb:
+				return 1
+			default:
+				return 0
+			}
+		})
+	}
+
+	return sources, nil
 }
 
 // downloadForce downloads a file, always overwriting it (for metadata files).

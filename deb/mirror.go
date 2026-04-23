@@ -169,7 +169,10 @@ func mirrorSuite(dl *downloader.Client, mirrorURL, destDir, repoName, suite stri
 					continue
 				}
 				fileURL := distBase + "/" + fileName
-				fileDest := filepath.Join(distDest, filepath.FromSlash(fileName))
+				fileDest, err := downloader.SafeJoin(distDest, filepath.FromSlash(fileName))
+				if err != nil {
+					continue
+				}
 				entry, ok := metaChecksums[fileName]
 				var algo, sum string
 				if ok {
@@ -215,7 +218,10 @@ func mirrorSuite(dl *downloader.Client, mirrorURL, destDir, repoName, suite stri
 			}
 			seen[p.filename] = true
 			pkgURL := mirrorURL + "/" + p.filename
-			pkgDest := filepath.Join(destDir, filepath.FromSlash(p.filename))
+			pkgDest, err := downloader.SafeJoin(destDir, filepath.FromSlash(p.filename))
+			if err != nil {
+				continue
+			}
 			entries = append(entries, pkgEntry{
 				url:      pkgURL,
 				dest:     pkgDest,

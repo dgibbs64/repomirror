@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -104,14 +105,17 @@ func (c *Client) DownloadFileP(url, destPath, algo, expected string, prog *Count
 	// avoids re-hashing unchanged files on every run.
 	if expected != "" && statErr == nil {
 		if checksumCacheHit(destPath, algo, expected, info) {
+			_ = os.Remove(resumeMarkerPath(destPath))
 			return nil
 		}
 		if ok, _ := checksumMatch(destPath, algo, expected); ok {
 			_ = writeChecksumCache(destPath, algo, expected, info)
+			_ = os.Remove(resumeMarkerPath(destPath))
 			return nil
 		}
 	} else if statErr == nil {
 		// No checksum provided; skip if file already exists.
+		_ = os.Remove(resumeMarkerPath(destPath))
 		return nil
 	}
 
@@ -134,7 +138,15 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	// Support resuming: check existing partial file size.
 	var startByte int64
 	if info, err := os.Stat(destPath); err == nil {
-		startByte = info.Size()
+		if info.Size() > 0 && trustedResumeMarkerExists(destPath, url) {
+			startByte = info.Size()
+		} else {
+			startByte = 0
+		}
+	}
+
+	if err := writeResumeMarker(destPath, url); err != nil {
+		return err
 	}
 
 	req, err := http.NewRequest(http.MethodGet, url, nil) // #nosec G107
@@ -219,13 +231,39 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 		if !ok {
 			os.Remove(destPath)
 			_ = os.Remove(checksumCachePath(destPath))
+			_ = os.Remove(resumeMarkerPath(destPath))
 			return fmt.Errorf("checksum mismatch for %s", destPath)
 		}
 		if info, err := os.Stat(destPath); err == nil {
 			_ = writeChecksumCache(destPath, algo, expected, info)
 		}
 	}
+	_ = os.Remove(resumeMarkerPath(destPath))
 	return nil
+}
+
+// SafeJoin joins root+relativePath and rejects any traversal outside root.
+func SafeJoin(root, relativePath string) (string, error) {
+	if filepath.IsAbs(relativePath) {
+		return "", fmt.Errorf("absolute path not allowed: %s", relativePath)
+	}
+	cleanRel := filepath.Clean(relativePath)
+	if cleanRel == "." || cleanRel == "" {
+		return root, nil
+	}
+	if cleanRel == ".." || strings.HasPrefix(cleanRel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path traversal not allowed: %s", relativePath)
+	}
+	joined := filepath.Join(root, cleanRel)
+	rootClean := filepath.Clean(root)
+	rel, err := filepath.Rel(rootClean, joined)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path escapes destination root: %s", relativePath)
+	}
+	return joined, nil
 }
 
 // checksumMatch returns true if the file at path matches the expected hex digest.
@@ -259,6 +297,29 @@ func checksumMatch(path, algo, expected string) (bool, error) {
 
 func checksumCachePath(path string) string {
 	return path + ".repomirror.checksum"
+}
+
+func resumeMarkerPath(path string) string {
+	return path + ".repomirror.resume"
+}
+
+func trustedResumeMarkerExists(path, url string) bool {
+	b, err := os.ReadFile(resumeMarkerPath(path))
+	if err != nil {
+		return false
+	}
+	stored := strings.TrimSpace(string(b))
+	return stored == url
+}
+
+func writeResumeMarker(path, url string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if strings.TrimSpace(url) == "" {
+		return errors.New("empty URL for resume marker")
+	}
+	return os.WriteFile(resumeMarkerPath(path), []byte(url+"\n"), 0o644)
 }
 
 func checksumCacheHit(path, algo, expected string, info os.FileInfo) bool {
