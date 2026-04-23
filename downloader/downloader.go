@@ -202,11 +202,12 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 		transferred: startByte,
 		total:      total,
 	}
+	if prog != nil {
+		// Keep the current filename visible immediately, even before first bytes arrive.
+		prog.SetActiveProgress(src.display, src.transferred, src.total)
+	}
 	if _, err := io.Copy(f, src); err != nil {
 		return err
-	}
-	if prog != nil {
-		prog.ClearActiveProgress(src.display)
 	}
 
 	// Verify checksum after writing.
