@@ -5,6 +5,24 @@
 deb_repos:
 
   # ---------------------------------------------------------------------------
+  # Source failover example (mirror + mirrorlist + metalink)
+  # Keep mirror as your preferred pinned source, and use mirrorlist/metalink
+  # as fallback sources. preferred_mirror biases ordering when multiple sources
+  # are available.
+  # ---------------------------------------------------------------------------
+  - name: ubuntu-jammy-failover-example
+    enable: true
+    path: ubuntu
+    mirror: http://archive.ubuntu.com/ubuntu
+    mirrorlist: http://mirrors.ubuntu.com/mirrors.txt
+    # metalink: https://mirrors.example.org/ubuntu.metalink
+    preferred_mirror: archive.ubuntu.com
+    suites: [jammy, jammy-updates, jammy-security]
+    components: [main, restricted, universe]
+    arches: [amd64]
+    gpg_key: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C
+
+  # ---------------------------------------------------------------------------
   # Ubuntu 26.04 LTS (Resolute Raccoon)
   # ---------------------------------------------------------------------------
   - name: ubuntu-resolute

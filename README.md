@@ -78,7 +78,11 @@ deb_repos:
   - name: ubuntu-jammy
     enable: true                  # optional; set false to skip this repo
     path: ubuntu
-    mirror: http://archive.ubuntu.com/ubuntu
+    mirror: http://archive.ubuntu.com/ubuntu # explicit mirror (always supported)
+    # Optional failover sources:
+    # mirrorlist: https://mirrors.example.org/ubuntu.list
+    # metalink: https://mirrors.example.org/ubuntu.metalink
+    # preferred_mirror: archive.ubuntu.com
     suites: [jammy, jammy-updates, jammy-security]
     components: [main, restricted, universe]
     arches: [amd64]

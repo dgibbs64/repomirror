@@ -34,7 +34,10 @@ type DEBRepo struct {
   Enable     *bool    `yaml:"enable"` // nil or true => enabled, false => skipped
 	Name       string   `yaml:"name"`
 	Path       string   `yaml:"path"`       // URL path served by the webserver, e.g. ubuntu
-	Mirror     string   `yaml:"mirror"`     // e.g. http://archive.ubuntu.com/ubuntu
+  Mirror     string   `yaml:"mirror"`     // explicit mirror/base URL; preferred when set
+  Mirrorlist string   `yaml:"mirrorlist"` // optional URL returning plain-text mirror URLs
+  Metalink   string   `yaml:"metalink"`   // optional URL returning metalink XML mirror URLs
+  PreferredMirror string `yaml:"preferred_mirror"` // optional host/substr preferred when using mirrorlist/metalink
 	Suites     []string `yaml:"suites"`     // e.g. jammy, jammy-updates
 	Components []string `yaml:"components"` // e.g. main, restricted, universe
 	Arches     []string `yaml:"arches"`     // e.g. amd64
@@ -128,6 +131,10 @@ deb_repos:
     enable: true
     path: ubuntu
     mirror: http://archive.ubuntu.com/ubuntu
+    # Optional failover sources:
+    # mirrorlist: https://mirrors.example.org/ubuntu.list
+    # metalink: https://mirrors.example.org/ubuntu.metalink
+    # preferred_mirror: archive.ubuntu.com
     suites:
       - jammy
       - jammy-updates
