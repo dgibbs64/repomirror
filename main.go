@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"repomirror/clientconfigs"
 	"repomirror/config"
@@ -60,6 +61,12 @@ func main() {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		log.Fatalf("create output dir: %v", err)
 	}
+
+	unlock, err := lockOutputTree(outputDir)
+	if err != nil {
+		log.Fatalf("lock output dir: %v", err)
+	}
+	defer unlock()
 
 	dl := downloader.New()
 	if *dryRun {
@@ -132,4 +139,30 @@ func main() {
 		log.Println("Mirror completed with errors (see above).")
 	}
 	os.Exit(exitCode)
+}
+
+func lockOutputTree(outputDir string) (func(), error) {
+	lockPath := filepath.Join(outputDir, ".repomirror.lock")
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("open lock file %s: %w", lockPath, err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("another repomirror process is already using %s", outputDir)
+	}
+	if err := f.Truncate(0); err != nil {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+		return nil, fmt.Errorf("truncate lock file: %w", err)
+	}
+	if _, err := f.WriteString(fmt.Sprintf("pid=%d\n", os.Getpid())); err != nil {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+		return nil, fmt.Errorf("write lock file: %w", err)
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+	}, nil
 }

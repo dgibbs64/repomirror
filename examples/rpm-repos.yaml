@@ -6,6 +6,21 @@
 rpm_repos:
 
   # ---------------------------------------------------------------------------
+  # Source failover example (base_url + mirrorlist + metalink)
+  # Keep base_url as your preferred pinned mirror, and use mirrorlist/metalink
+  # as fallback sources. preferred_mirror biases ordering when multiple sources
+  # are available.
+  # ---------------------------------------------------------------------------
+  - name: epel-9-failover-example
+    enable: true
+    path: epel/9/Everything/x86_64
+    base_url: https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/
+    mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=epel-9&arch=x86_64
+    metalink: https://mirrors.fedoraproject.org/metalink?repo=epel-9&arch=x86_64
+    preferred_mirror: dl.fedoraproject.org
+    gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
+
+  # ---------------------------------------------------------------------------
   # CentOS Stream 9
   # ---------------------------------------------------------------------------
   - name: centos-9stream-baseos

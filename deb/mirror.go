@@ -145,8 +145,9 @@ func mirrorSuite(dl *downloader.Client, mirrorURL, destDir, repoName, suite stri
 		}
 	}
 
-	// Parse the Release/InRelease file to get checksums for metadata files.
-	metaChecksums := parseReleaseChecksums(releaseData)
+	// Parse the Release/InRelease file to get checksums and by-hash policy.
+	rmeta := parseReleaseMetadata(releaseData)
+	metaChecksums := rmeta.checksums
 
 	// Collect and download all metadata files for our components/arches.
 	var pkgMeta []metaEntry
@@ -178,13 +179,27 @@ func mirrorSuite(dl *downloader.Client, mirrorURL, destDir, repoName, suite stri
 				if ok {
 					algo, sum = entry.algo, entry.sum
 				}
+
+				metaURL := fileURL
+				if rmeta.acquireByHash && ok {
+					if byHashURL, byHashOK := buildByHashURL(distBase, fileName, entry.algo, entry.sum); byHashOK {
+						metaURL = byHashURL
+					}
+				}
 				isPkgs := strings.HasSuffix(fileName, "Packages") || strings.HasSuffix(fileName, "Packages.gz")
-				if err := dl.DownloadFile(fileURL, fileDest, algo, sum); err != nil {
-					// Some files may not exist on all mirrors; skip silently.
-					continue
+				if err := dl.DownloadFile(metaURL, fileDest, algo, sum); err != nil {
+					if metaURL != fileURL {
+						if err2 := dl.DownloadFile(fileURL, fileDest, algo, sum); err2 != nil {
+							// Some files may not exist on all mirrors; skip silently.
+							continue
+						}
+					} else {
+						// Some files may not exist on all mirrors; skip silently.
+						continue
+					}
 				}
 				if isPkgs {
-					pkgMeta = append(pkgMeta, metaEntry{url: fileURL, dest: fileDest, isPkgs: true})
+					pkgMeta = append(pkgMeta, metaEntry{url: metaURL, dest: fileDest, isPkgs: true})
 				}
 			}
 		}
@@ -241,10 +256,15 @@ type sumEntry struct {
 	sum  string
 }
 
-// parseReleaseChecksums extracts filename → checksum from a Release/InRelease
-// file. We prefer SHA256 over SHA1 over MD5.
-func parseReleaseChecksums(data []byte) map[string]sumEntry {
-	result := map[string]sumEntry{}
+type releaseMetadata struct {
+	checksums     map[string]sumEntry
+	acquireByHash bool
+}
+
+// parseReleaseMetadata extracts filename checksums and Acquire-By-Hash policy
+// from a Release/InRelease file. We prefer SHA256 over SHA1 over MD5.
+func parseReleaseMetadata(data []byte) releaseMetadata {
+	result := releaseMetadata{checksums: map[string]sumEntry{}}
 
 	// InRelease files are PGP clearsigned; strip the armour.
 	text := stripPGPArmour(data)
@@ -267,6 +287,9 @@ func parseReleaseChecksums(data []byte) map[string]sumEntry {
 			currentAlgo = "sha512"
 			continue
 		}
+		if strings.EqualFold(strings.TrimSpace(line), "Acquire-By-Hash: yes") {
+			result.acquireByHash = true
+		}
 		// Lines under a hash section start with a space.
 		if currentAlgo != "" && strings.HasPrefix(line, " ") {
 			fields := strings.Fields(line)
@@ -275,9 +298,9 @@ func parseReleaseChecksums(data []byte) map[string]sumEntry {
 			}
 			filename := fields[2]
 			sum := fields[0]
-			existing, ok := result[filename]
+			existing, ok := result.checksums[filename]
 			if !ok || algoPriority(currentAlgo) > algoPriority(existing.algo) {
-				result[filename] = sumEntry{algo: currentAlgo, sum: sum}
+				result.checksums[filename] = sumEntry{algo: currentAlgo, sum: sum}
 			}
 		} else if !strings.HasPrefix(line, " ") && line != "" {
 			// New top-level stanza; reset section.
@@ -285,6 +308,35 @@ func parseReleaseChecksums(data []byte) map[string]sumEntry {
 		}
 	}
 	return result
+}
+
+func buildByHashURL(distBase, relativePath, algo, sum string) (string, bool) {
+	hashDir, ok := byHashDirName(algo)
+	if !ok || sum == "" {
+		return "", false
+	}
+	relativePath = strings.TrimLeft(relativePath, "/")
+	idx := strings.LastIndex(relativePath, "/")
+	if idx < 0 {
+		return "", false
+	}
+	parent := relativePath[:idx]
+	return distBase + "/" + parent + "/by-hash/" + hashDir + "/" + sum, true
+}
+
+func byHashDirName(algo string) (string, bool) {
+	switch strings.ToLower(algo) {
+	case "sha512":
+		return "SHA512", true
+	case "sha256":
+		return "SHA256", true
+	case "sha1":
+		return "SHA1", true
+	case "md5":
+		return "MD5Sum", true
+	default:
+		return "", false
+	}
 }
 
 func algoPriority(algo string) int {
