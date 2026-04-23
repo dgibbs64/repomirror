@@ -18,6 +18,7 @@ type Config struct {
 
 // RPMRepo describes a YUM/DNF repository to mirror.
 type RPMRepo struct {
+  Enable  *bool    `yaml:"enable"`   // nil or true => enabled, false => skipped
 	Name    string   `yaml:"name"`
 	Path    string   `yaml:"path"`     // URL path served by the webserver, e.g. rocky/9/BaseOS/x86_64/os
 	BaseURL string   `yaml:"base_url"`
@@ -27,6 +28,7 @@ type RPMRepo struct {
 
 // DEBRepo describes an APT repository to mirror.
 type DEBRepo struct {
+  Enable     *bool    `yaml:"enable"` // nil or true => enabled, false => skipped
 	Name       string   `yaml:"name"`
 	Path       string   `yaml:"path"`       // URL path served by the webserver, e.g. ubuntu
 	Mirror     string   `yaml:"mirror"`     // e.g. http://archive.ubuntu.com/ubuntu
@@ -34,6 +36,16 @@ type DEBRepo struct {
 	Components []string `yaml:"components"` // e.g. main, restricted, universe
 	Arches     []string `yaml:"arches"`     // e.g. amd64
 	GPGKey     string   `yaml:"gpg_key"`    // URL to the GPG public key
+}
+
+// Enabled returns true unless enable is explicitly set to false.
+func (r RPMRepo) Enabled() bool {
+  return r.Enable == nil || *r.Enable
+}
+
+// Enabled returns true unless enable is explicitly set to false.
+func (r DEBRepo) Enabled() bool {
+  return r.Enable == nil || *r.Enable
 }
 
 // Load reads and parses the YAML config file at path.
@@ -73,6 +85,7 @@ rpm_repos:
 
   # Rocky Linux 9 — two separate repo entries, one per repo path
   - name: rocky-9-baseos
+    enable: true
     path: rocky/9/BaseOS/x86_64/os
     base_url: https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/
     gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-9
@@ -105,6 +118,7 @@ deb_repos:
   # Ubuntu 22.04 LTS (Jammy)
   # Client config: deb http://example.com/ubuntu jammy main restricted universe
   - name: ubuntu-jammy
+    enable: true
     path: ubuntu
     mirror: http://archive.ubuntu.com/ubuntu
     suites:

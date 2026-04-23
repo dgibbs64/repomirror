@@ -72,6 +72,14 @@ func main() {
 	// Mirror DEB repos first, sequentially. Each repo uses cfg.Workers
 	// concurrent connections internally.
 	for _, repo := range cfg.DEBRepos {
+		if !repo.Enabled() {
+			name := repo.Name
+			if name == "" {
+				name = repo.Path
+			}
+			log.Printf("[deb] %s: skipped (enable=false)", name)
+			continue
+		}
 		path := repo.Path
 		if path == "" {
 			path = repo.Name
@@ -85,6 +93,14 @@ func main() {
 
 	// Then mirror RPM repos, sequentially.
 	for _, repo := range cfg.RPMRepos {
+		if !repo.Enabled() {
+			name := repo.Name
+			if name == "" {
+				name = repo.Path
+			}
+			log.Printf("[rpm] %s: skipped (enable=false)", name)
+			continue
+		}
 		path := repo.Path
 		if path == "" {
 			path = repo.Name

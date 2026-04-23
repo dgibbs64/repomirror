@@ -37,11 +37,13 @@ func Mirror(mirrorURL, destDir, repoName, gpgKeyURL string, suites, components, 
 	var allPkgURLs []pkgEntry // collected across all suites/components/arches
 
 	for _, suite := range suites {
+		log.Printf("[deb] %s suite %s: fetching Release metadata", repoName, suite)
 		pkgs, err := mirrorSuite(dl, mirrorURL, destDir, repoName, suite, components, arches)
 		if err != nil {
 			log.Printf("[deb] %s suite %s: %v", repoName, suite, err)
 			continue
 		}
+		log.Printf("[deb] %s suite %s: discovered %d package entries", repoName, suite, len(pkgs))
 		allPkgURLs = append(allPkgURLs, pkgs...)
 	}
 

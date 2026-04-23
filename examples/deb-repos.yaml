@@ -1,5 +1,6 @@
 # DEB repository snippets for mirrors.yaml
 # Copy the entries you need into the deb_repos section of your mirrors.yaml.
+# Add 'enable: false' under any repo to skip it temporarily during testing.
 
 deb_repos:
 

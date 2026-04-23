@@ -1,6 +1,7 @@
 # RPM repository snippets for mirrors.yaml
 # Copy the entries you need into the rpm_repos section of your mirrors.yaml.
 # All examples are for x86_64. Adjust the path/base_url for other arches (e.g. aarch64).
+# Add 'enable: false' under any repo to skip it temporarily during testing.
 
 rpm_repos:
 

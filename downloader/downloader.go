@@ -14,11 +14,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
+
+const transferActivityInterval = 20 * time.Second
 
 // Client wraps an http.Client with retry and resume logic.
 type Client struct {
@@ -61,7 +64,14 @@ func (c *Client) FetchBytes(url string) ([]byte, error) {
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("HTTP %d fetching %s", resp.StatusCode, url)
 		}
-		data, err := io.ReadAll(resp.Body)
+		reader := &transferReader{
+			r:          resp.Body,
+			url:        url,
+			lastReport: time.Now(),
+			nextReport: time.Now().Add(transferActivityInterval),
+			total:      resp.ContentLength,
+		}
+		data, err := io.ReadAll(reader)
 		if err != nil {
 			lastErr = err
 			continue
@@ -178,9 +188,18 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	}
 	defer f.Close()
 
-	var src io.Reader = resp.Body
-	if prog != nil {
-		src = &countingReader{r: resp.Body, c: prog}
+	var total int64 = -1
+	if resp.ContentLength >= 0 {
+		total = startByte + resp.ContentLength
+	}
+	src := &transferReader{
+		r:          resp.Body,
+		c:          prog,
+		url:        url,
+		lastReport: time.Now(),
+		nextReport: time.Now().Add(transferActivityInterval),
+		transferred: startByte,
+		total:      total,
 	}
 	if _, err := io.Copy(f, src); err != nil {
 		return err
@@ -271,4 +290,55 @@ func writeChecksumCache(path, algo, expected string, info os.FileInfo) error {
 		strconv.FormatInt(info.ModTime().UnixNano(), 10),
 	}, "\n") + "\n"
 	return os.WriteFile(checksumCachePath(path), []byte(content), 0o644)
+}
+
+// transferReader reports periodic activity for long-running transfers.
+type transferReader struct {
+	r           io.Reader
+	c           *Counter
+	url         string
+	transferred int64
+	total       int64
+	lastReport  time.Time
+	nextReport  time.Time
+}
+
+func (tr *transferReader) Read(p []byte) (int, error) {
+	n, err := tr.r.Read(p)
+	if n > 0 {
+		tr.transferred += int64(n)
+		if tr.c != nil {
+			tr.c.AddBytes(int64(n))
+		}
+		now := time.Now()
+		if now.After(tr.nextReport) {
+			tr.report(now)
+			tr.nextReport = now.Add(transferActivityInterval)
+		}
+	}
+	return n, err
+}
+
+func (tr *transferReader) report(now time.Time) {
+	elapsed := now.Sub(tr.lastReport)
+	if elapsed <= 0 {
+		elapsed = time.Second
+	}
+	if tr.total > 0 {
+		pct := float64(tr.transferred) / float64(tr.total) * 100
+		log.Printf("[dl] active %s: %s/%s (%.1f%%)", shortURLForLog(tr.url), fmtBytes(float64(tr.transferred)), fmtBytes(float64(tr.total)), pct)
+		return
+	}
+	log.Printf("[dl] active %s: %s transferred", shortURLForLog(tr.url), fmtBytes(float64(tr.transferred)))
+}
+
+func shortURLForLog(raw string) string {
+	name := path.Base(raw)
+	if name == "." || name == "/" || name == "" {
+		return raw
+	}
+	if len(name) > 96 {
+		return name[:48] + "..." + name[len(name)-32:]
+	}
+	return name
 }

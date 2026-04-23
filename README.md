@@ -65,12 +65,14 @@ workers: 4                        # concurrent connections per repo
 
 rpm_repos:
   - name: centos-9stream-baseos
+    enable: true                  # optional; set false to skip this repo
     path: centos/9-stream/BaseOS/x86_64/os   # output directory under output_dir
     base_url: https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/
     gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
 
 deb_repos:
   - name: ubuntu-jammy
+    enable: true                  # optional; set false to skip this repo
     path: ubuntu
     mirror: http://archive.ubuntu.com/ubuntu
     suites: [jammy, jammy-updates, jammy-security]

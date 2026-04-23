@@ -63,6 +63,7 @@ func Mirror(baseURL, destDir, repoName, gpgKeyURL string, workers int, dl *downl
 	baseURL = strings.TrimRight(baseURL, "/")
 
 	log.Printf("[rpm] %s  →  %s", baseURL, destDir)
+	log.Printf("[rpm] %s: preparing metadata (workers=%d)", repoName, workers)
 
 	// Fetch and import the GPG key.
 	keysDir := filepath.Join(destDir, "gpg-keys")
@@ -73,6 +74,7 @@ func Mirror(baseURL, destDir, repoName, gpgKeyURL string, workers int, dl *downl
 	// Fetch repomd.xml (always into memory so dry-run can parse it).
 	repomdURL := baseURL + "/repodata/repomd.xml"
 	repomdDest := filepath.Join(destDir, "repodata", "repomd.xml")
+	log.Printf("[rpm] %s: fetching repomd.xml", repoName)
 	repomdData, err := dl.FetchBytes(repomdURL)
 	if err != nil {
 		return fmt.Errorf("[rpm] %s: fetch repomd.xml: %w", repoName, err)
@@ -95,6 +97,7 @@ func Mirror(baseURL, destDir, repoName, gpgKeyURL string, workers int, dl *downl
 	if err := xml.Unmarshal(repomdData, &rmd); err != nil {
 		return fmt.Errorf("[rpm] %s: parse repomd.xml: %w", repoName, err)
 	}
+	log.Printf("[rpm] %s: repomd.xml loaded (%d metadata records)", repoName, len(rmd.Data))
 
 	// Download all metadata files listed in repomd.xml.
 	// Track the primary metadata URL/dest for later parsing.
@@ -116,6 +119,7 @@ func Mirror(baseURL, destDir, repoName, gpgKeyURL string, workers int, dl *downl
 	if primaryURL == "" {
 		return fmt.Errorf("[rpm] %s: no primary metadata found in repomd.xml", repoName)
 	}
+	log.Printf("[rpm] %s: parsing primary metadata", repoName)
 
 	// Parse primary.xml — in dry-run mode fetch into memory since the file
 	// was never written to disk.
