@@ -16,6 +16,9 @@ type Counter struct {
 	total    int64
 	done     atomic.Int64
 	bytes    atomic.Int64
+	active   atomic.Value // string
+	activeTx atomic.Int64
+	activeSz atomic.Int64 // -1 when unknown
 	start    time.Time
 }
 
@@ -31,6 +34,28 @@ func NewCounter(name, repoType string, total int) *Counter {
 
 // AddBytes records n bytes transferred over the network.
 func (c *Counter) AddBytes(n int64) { c.bytes.Add(n) }
+
+// SetActiveProgress records the currently active package/file transfer.
+func (c *Counter) SetActiveProgress(name string, transferred, total int64) {
+	c.active.Store(name)
+	c.activeTx.Store(transferred)
+	c.activeSz.Store(total)
+}
+
+// ClearActiveProgress clears active transfer details if the name matches.
+func (c *Counter) ClearActiveProgress(name string) {
+	v := c.active.Load()
+	if v == nil {
+		return
+	}
+	current, ok := v.(string)
+	if !ok || current != name {
+		return
+	}
+	c.active.Store("")
+	c.activeTx.Store(0)
+	c.activeSz.Store(-1)
+}
 
 // Done records one package as complete (downloaded or already cached).
 func (c *Counter) Done() { c.done.Add(1) }
@@ -56,6 +81,19 @@ func (c *Counter) Log() {
 
 	line := fmt.Sprintf("[%s] %s: %d/%d (%.1f%%) %s/s%s",
 		c.repoType, c.name, done, total, pct, fmtBytes(speed), eta)
+
+	if v := c.active.Load(); v != nil {
+		if activeName, ok := v.(string); ok && activeName != "" {
+			activeTx := c.activeTx.Load()
+			activeSz := c.activeSz.Load()
+			if activeSz > 0 {
+				activePct := float64(activeTx) / float64(activeSz) * 100
+				line += fmt.Sprintf(" file %s %s/%s (%.1f%%)", activeName, fmtBytes(float64(activeTx)), fmtBytes(float64(activeSz)), activePct)
+			} else {
+				line += fmt.Sprintf(" file %s %s", activeName, fmtBytes(float64(activeTx)))
+			}
+		}
+	}
 	// %-80s pads/truncates so we always overwrite the full previous line.
 	fmt.Fprintf(os.Stderr, "\r%-80s", line)
 }

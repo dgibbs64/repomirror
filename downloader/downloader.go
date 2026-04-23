@@ -196,6 +196,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 		r:          resp.Body,
 		c:          prog,
 		url:        url,
+		display:    shortURLForLog(url),
 		lastReport: time.Now(),
 		nextReport: time.Now().Add(transferActivityInterval),
 		transferred: startByte,
@@ -203,6 +204,9 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	}
 	if _, err := io.Copy(f, src); err != nil {
 		return err
+	}
+	if prog != nil {
+		prog.ClearActiveProgress(src.display)
 	}
 
 	// Verify checksum after writing.
@@ -297,6 +301,7 @@ type transferReader struct {
 	r           io.Reader
 	c           *Counter
 	url         string
+	display     string
 	transferred int64
 	total       int64
 	lastReport  time.Time
@@ -309,6 +314,7 @@ func (tr *transferReader) Read(p []byte) (int, error) {
 		tr.transferred += int64(n)
 		if tr.c != nil {
 			tr.c.AddBytes(int64(n))
+			tr.c.SetActiveProgress(tr.display, tr.transferred, tr.total)
 		}
 		now := time.Now()
 		if now.After(tr.nextReport) {
