@@ -107,8 +107,6 @@ func Mirror(mirrorURL, mirrorlistURL, metalinkURL, preferredMirror, destDir, rep
 	if errCount > 0 {
 		return fmt.Errorf("[deb] %s: %d package(s) failed", repoName, errCount)
 	}
-
-	log.Printf("[deb] %s: done", repoName)
 	return nil
 }
 

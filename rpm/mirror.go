@@ -19,14 +19,14 @@ import (
 // ---------- XML structs for repomd.xml ----------
 
 type repoMD struct {
-	XMLName  xml.Name    `xml:"repomd"`
-	Data     []repoData  `xml:"data"`
+	XMLName xml.Name   `xml:"repomd"`
+	Data    []repoData `xml:"data"`
 }
 
 type repoData struct {
-	Type     string      `xml:"type,attr"`
-	Location location    `xml:"location"`
-	Checksum checksum    `xml:"checksum"`
+	Type         string   `xml:"type,attr"`
+	Location     location `xml:"location"`
+	Checksum     checksum `xml:"checksum"`
 	OpenChecksum checksum `xml:"open-checksum"`
 }
 
@@ -42,8 +42,8 @@ type checksum struct {
 // ---------- XML structs for primary.xml ----------
 
 type primaryMD struct {
-	XMLName  xml.Name   `xml:"metadata"`
-	Packages []rpmPkg   `xml:"package"`
+	XMLName  xml.Name `xml:"metadata"`
+	Packages []rpmPkg `xml:"package"`
 }
 
 type rpmPkg struct {
@@ -222,8 +222,6 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, destDir, repoN
 	if errCount > 0 {
 		return fmt.Errorf("[rpm] %s: %d package(s) failed to download", repoName, errCount)
 	}
-
-	log.Printf("[rpm] %s: done", repoName)
 	return nil
 }
 

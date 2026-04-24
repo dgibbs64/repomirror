@@ -5,9 +5,76 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
+	"unsafe"
 )
+
+type termTheme struct {
+	color   bool
+	unicode bool
+}
+
+var progressTheme = detectTermTheme()
+var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func detectTermTheme() termTheme {
+	unicode := supportsUnicode()
+	if os.Getenv("NO_COLOR") != "" {
+		return termTheme{color: false, unicode: unicode}
+	}
+	if os.Getenv("TERM") == "dumb" {
+		return termTheme{color: false, unicode: unicode}
+	}
+	fi, err := os.Stderr.Stat()
+	if err != nil {
+		return termTheme{color: false, unicode: unicode}
+	}
+	if (fi.Mode() & os.ModeCharDevice) == 0 {
+		return termTheme{color: false, unicode: unicode}
+	}
+	return termTheme{color: true, unicode: unicode}
+}
+
+func supportsUnicode() bool {
+	check := strings.ToUpper(os.Getenv("LC_ALL") + " " + os.Getenv("LC_CTYPE") + " " + os.Getenv("LANG"))
+	return strings.Contains(check, "UTF-8") || strings.Contains(check, "UTF8")
+}
+
+func (t termTheme) paint(code, s string) string {
+	if !t.color {
+		return s
+	}
+	return "\033[" + code + "m" + s + "\033[0m"
+}
+
+func (t termTheme) typeBadge(repoType string) string {
+	label := strings.ToUpper(repoType)
+	if !t.color {
+		return "[" + label + "]"
+	}
+	if repoType == "rpm" {
+		// RHEL-style red badge.
+		return t.paint("97;41", " RPM ")
+	}
+	if repoType == "deb" {
+		// Ubuntu-style warm amber badge.
+		return t.paint("30;43", " DEB ")
+	}
+	return t.paint("30;47", " "+label+" ")
+}
+
+func (t termTheme) icon(repoType string) string {
+	_ = repoType
+	if !t.unicode {
+		return "pkg"
+	}
+	return "📥"
+}
 
 // Counter tracks download progress for one repo mirror run.
 type Counter struct {
@@ -76,24 +143,41 @@ func (c *Counter) Log() {
 	var eta string
 	if done > 0 && done < total {
 		remaining := float64(total-done) * (elapsed / float64(done))
-		eta = fmt.Sprintf(" ETA %s", fmtDuration(time.Duration(remaining)*time.Second))
+		eta = fmt.Sprintf(" eta %s", fmtDuration(time.Duration(remaining)*time.Second))
 	}
 
-	line := fmt.Sprintf("[%s] %s: %d/%d (%.1f%%) %s/s%s",
-		c.repoType, c.name, done, total, pct, fmtBytes(speed), eta)
+	base := fmt.Sprintf("%s %s %s %d/%d %s %s/s%s",
+		progressTheme.typeBadge(c.repoType),
+		progressTheme.icon(c.repoType),
+		progressTheme.paint("1", c.name+":"),
+		done, total,
+		progressTheme.paint("33", fmt.Sprintf("(%.1f%%)", pct)),
+		progressTheme.paint("36", fmtBytes(speed)),
+		progressTheme.paint("2", eta))
+
+	line := base
 
 	if v := c.active.Load(); v != nil {
 		if activeName, ok := v.(string); ok && activeName != "" {
 			activeTx := c.activeTx.Load()
 			activeSz := c.activeSz.Load()
+			fileIcon := progressTheme.icon(c.repoType)
 			if activeSz > 0 {
 				activePct := float64(activeTx) / float64(activeSz) * 100
-				line += fmt.Sprintf(" | file %s %s/%s (%.1f%%)", activeName, fmtBytes(float64(activeTx)), fmtBytes(float64(activeSz)), activePct)
+				line += fmt.Sprintf(" | %s %s %s/%s %s", fileIcon,
+					progressTheme.paint("2", activeName),
+					fmtBytes(float64(activeTx)), fmtBytes(float64(activeSz)),
+					progressTheme.paint("33", fmt.Sprintf("(%.1f%%)", activePct)))
 			} else {
-				line += fmt.Sprintf(" | file %s %s", activeName, fmtBytes(float64(activeTx)))
+				line += fmt.Sprintf(" | %s %s %s", fileIcon,
+					progressTheme.paint("2", activeName),
+					fmtBytes(float64(activeTx)))
 			}
 		}
 	}
+
+	width := termWidth()
+	line = fitToWidth(line, width)
 	// Clear the entire terminal line before rendering updated progress.
 	fmt.Fprintf(os.Stderr, "\r\033[K%s", line)
 }
@@ -105,12 +189,31 @@ func (c *Counter) Finish() {
 	fmt.Fprintf(os.Stderr, "\r\033[K")
 	elapsed := time.Since(c.start)
 	bytes := c.bytes.Load()
-	var avgStr string
+	if bytes == 0 {
+		if c.total > 0 {
+			log.Printf("%s %s %s done (up-to-date; %d files already present)",
+				progressTheme.typeBadge(c.repoType),
+				progressTheme.icon(c.repoType),
+				c.name+":",
+				c.total)
+			return
+		}
+		log.Printf("%s %s %s done (nothing to mirror)",
+			progressTheme.typeBadge(c.repoType),
+			progressTheme.icon(c.repoType),
+			c.name+":")
+		return
+	}
+
+	avgStr := ""
 	if s := elapsed.Seconds(); s > 0 {
 		avgStr = fmt.Sprintf(" avg %s/s", fmtBytes(float64(bytes)/s))
 	}
-	log.Printf("[%s] %s: done — %s in %s%s",
-		c.repoType, c.name, fmtBytes(float64(bytes)), fmtDuration(elapsed), avgStr)
+	log.Printf("%s %s %s done %s in %s%s",
+		progressTheme.typeBadge(c.repoType),
+		progressTheme.icon(c.repoType),
+		c.name+":",
+		fmtBytes(float64(bytes)), fmtDuration(elapsed), avgStr)
 }
 
 // StartLogger refreshes the progress line every interval until stop is closed.
@@ -127,6 +230,77 @@ func (c *Counter) StartLogger(interval time.Duration, stop <-chan struct{}) {
 			}
 		}
 	}()
+}
+
+func termWidth() int {
+	if s := os.Getenv("COLUMNS"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 20 {
+			return n
+		}
+	}
+	ws, err := getWinSize()
+	if err == nil && ws > 20 {
+		return ws
+	}
+	return 120
+}
+
+func getWinSize() (int, error) {
+	type winsize struct {
+		Row    uint16
+		Col    uint16
+		Xpixel uint16
+		Ypixel uint16
+	}
+	ws := &winsize{}
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, os.Stderr.Fd(), uintptr(syscall.TIOCGWINSZ), uintptr(unsafe.Pointer(ws)))
+	if errno != 0 {
+		return 0, errno
+	}
+	return int(ws.Col), nil
+}
+
+func fitToWidth(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	// Keep a small safety margin because some terminals render emoji wide.
+	target := width - 4
+	if target < 20 {
+		target = 20
+	}
+	if visualLen(s) <= target {
+		return s
+	}
+	if idx := strings.Index(s, " | "); idx > 0 {
+		s = s[:idx]
+		if visualLen(s) <= target {
+			return s
+		}
+	}
+	// If still too long, fall back to plain (no ANSI) truncated text to avoid
+	// cutting escape sequences mid-stream.
+	plain := stripANSI(s)
+	return trimVisual(plain, target)
+}
+
+func visualLen(s string) int {
+	return len([]rune(stripANSI(s)))
+}
+
+func stripANSI(s string) string {
+	return ansiRE.ReplaceAllString(s, "")
+}
+
+func trimVisual(s string, max int) string {
+	if max <= 1 {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max-1]) + "…"
 }
 
 func fmtBytes(n float64) string {
