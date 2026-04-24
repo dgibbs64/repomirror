@@ -1,57 +1,59 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Config is the top-level configuration structure read from mirrors.yaml.
 type Config struct {
-	OutputDir string     `yaml:"output_dir"`
-	MirrorURL string     `yaml:"mirror_url"` // base URL clients use to reach this mirror, e.g. http://mirror.example.com
-	Workers   int        `yaml:"workers"`
-	RPMRepos  []RPMRepo  `yaml:"rpm_repos"`
-	DEBRepos  []DEBRepo  `yaml:"deb_repos"`
+	OutputDir string    `yaml:"output_dir"`
+	MirrorURL string    `yaml:"mirror_url"` // base URL clients use to reach this mirror, e.g. http://mirror.example.com
+	Workers   int       `yaml:"workers"`
+	RPMRepos  []RPMRepo `yaml:"rpm_repos"`
+	DEBRepos  []DEBRepo `yaml:"deb_repos"`
 }
 
 // RPMRepo describes a YUM/DNF repository to mirror.
 type RPMRepo struct {
-  Enable  *bool    `yaml:"enable"`   // nil or true => enabled, false => skipped
-	Name    string   `yaml:"name"`
-	Path    string   `yaml:"path"`     // URL path served by the webserver, e.g. rocky/9/BaseOS/x86_64/os
-  BaseURL string   `yaml:"base_url"`       // explicit mirror/base URL; preferred when set
-  Mirrorlist string `yaml:"mirrorlist"`    // optional URL returning plain-text mirror URLs
-  Metalink string   `yaml:"metalink"`      // optional URL returning metalink XML mirror URLs
-  PreferredMirror string `yaml:"preferred_mirror"` // optional host/substr preferred when using mirrorlist/metalink
-	Arches  []string `yaml:"arches"`
-	GPGKey  string   `yaml:"gpg_key"` // URL to the GPG public key
+	Enable          *bool    `yaml:"enable"` // nil or true => enabled, false => skipped
+	Name            string   `yaml:"name"`
+	Path            string   `yaml:"path"`             // URL path served by the webserver, e.g. rocky/9/BaseOS/x86_64/os
+	BaseURL         string   `yaml:"base_url"`         // explicit mirror/base URL; preferred when set
+	Mirrorlist      string   `yaml:"mirrorlist"`       // optional URL returning plain-text mirror URLs
+	Metalink        string   `yaml:"metalink"`         // optional URL returning metalink XML mirror URLs
+	PreferredMirror string   `yaml:"preferred_mirror"` // optional host/substr preferred when using mirrorlist/metalink
+	Arches          []string `yaml:"arches"`
+	GPGKey          string   `yaml:"gpg_key"` // URL to the GPG public key
 }
 
 // DEBRepo describes an APT repository to mirror.
 type DEBRepo struct {
-  Enable     *bool    `yaml:"enable"` // nil or true => enabled, false => skipped
-	Name       string   `yaml:"name"`
-	Path       string   `yaml:"path"`       // URL path served by the webserver, e.g. ubuntu
-  Mirror     string   `yaml:"mirror"`     // explicit mirror/base URL; preferred when set
-  Mirrorlist string   `yaml:"mirrorlist"` // optional URL returning plain-text mirror URLs
-  Metalink   string   `yaml:"metalink"`   // optional URL returning metalink XML mirror URLs
-  PreferredMirror string `yaml:"preferred_mirror"` // optional host/substr preferred when using mirrorlist/metalink
-	Suites     []string `yaml:"suites"`     // e.g. jammy, jammy-updates
-	Components []string `yaml:"components"` // e.g. main, restricted, universe
-	Arches     []string `yaml:"arches"`     // e.g. amd64
-	GPGKey     string   `yaml:"gpg_key"`    // URL to the GPG public key
+	Enable          *bool    `yaml:"enable"` // nil or true => enabled, false => skipped
+	Name            string   `yaml:"name"`
+	Path            string   `yaml:"path"`             // URL path served by the webserver, e.g. ubuntu
+	Mirror          string   `yaml:"mirror"`           // explicit mirror/base URL; preferred when set
+	Mirrorlist      string   `yaml:"mirrorlist"`       // optional URL returning plain-text mirror URLs
+	Metalink        string   `yaml:"metalink"`         // optional URL returning metalink XML mirror URLs
+	PreferredMirror string   `yaml:"preferred_mirror"` // optional host/substr preferred when using mirrorlist/metalink
+	Suites          []string `yaml:"suites"`           // e.g. jammy, jammy-updates
+	Components      []string `yaml:"components"`       // e.g. main, restricted, universe
+	Arches          []string `yaml:"arches"`           // e.g. amd64
+	GPGKey          string   `yaml:"gpg_key"`          // URL to the GPG public key
 }
 
 // Enabled returns true unless enable is explicitly set to false.
 func (r RPMRepo) Enabled() bool {
-  return r.Enable == nil || *r.Enable
+	return r.Enable == nil || *r.Enable
 }
 
 // Enabled returns true unless enable is explicitly set to false.
 func (r DEBRepo) Enabled() bool {
-  return r.Enable == nil || *r.Enable
+	return r.Enable == nil || *r.Enable
 }
 
 // Load reads and parses the YAML config file at path.
@@ -61,7 +63,9 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config %s: %w", path, err)
 	}
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
 	}
 	if cfg.OutputDir == "" {
@@ -70,7 +74,43 @@ func Load(path string) (*Config, error) {
 	if cfg.Workers <= 0 {
 		cfg.Workers = 4
 	}
+	if err := validate(&cfg); err != nil {
+		return nil, fmt.Errorf("validating config %s: %w", path, err)
+	}
 	return &cfg, nil
+}
+
+func validate(cfg *Config) error {
+	for i, r := range cfg.RPMRepos {
+		if strings.TrimSpace(r.BaseURL) == "" && strings.TrimSpace(r.Mirrorlist) == "" && strings.TrimSpace(r.Metalink) == "" {
+			return fmt.Errorf("rpm_repos[%d] (%s): set at least one source URL (base_url, mirrorlist, or metalink)", i, repoDisplayName(r.Name, r.Path))
+		}
+	}
+	for i, r := range cfg.DEBRepos {
+		if strings.TrimSpace(r.Mirror) == "" && strings.TrimSpace(r.Mirrorlist) == "" && strings.TrimSpace(r.Metalink) == "" {
+			return fmt.Errorf("deb_repos[%d] (%s): set at least one source URL (mirror, mirrorlist, or metalink)", i, repoDisplayName(r.Name, r.Path))
+		}
+		if len(r.Suites) == 0 {
+			return fmt.Errorf("deb_repos[%d] (%s): suites must not be empty", i, repoDisplayName(r.Name, r.Path))
+		}
+		if len(r.Components) == 0 {
+			return fmt.Errorf("deb_repos[%d] (%s): components must not be empty", i, repoDisplayName(r.Name, r.Path))
+		}
+		if len(r.Arches) == 0 {
+			return fmt.Errorf("deb_repos[%d] (%s): arches must not be empty", i, repoDisplayName(r.Name, r.Path))
+		}
+	}
+	return nil
+}
+
+func repoDisplayName(name, path string) string {
+	if strings.TrimSpace(name) != "" {
+		return name
+	}
+	if strings.TrimSpace(path) != "" {
+		return path
+	}
+	return "unnamed"
 }
 
 // ExampleConfig returns a commented example config YAML string.

@@ -29,6 +29,7 @@ func main() {
 	// Flags
 	cfgPath := flag.String("config", defaultCfgPath, "path to mirrors.yaml or mirrors.yml config file")
 	genConfig := flag.Bool("init", false, "write an example config file to the config path and exit")
+	validateConfig := flag.Bool("validate", false, "validate config file and exit")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	dryRun := flag.Bool("dry-run", false, "parse metadata and show what would be downloaded; create directory structure but skip actual downloads")
 	flag.Parse()
@@ -50,6 +51,10 @@ func main() {
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		log.Fatalf("load config: %v\n\nRun with -init to generate an example config.", err)
+	}
+	if *validateConfig {
+		fmt.Printf("Config is valid: %s\n", *cfgPath)
+		return
 	}
 
 	// Resolve output dir relative to the config file's location so that

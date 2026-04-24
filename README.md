@@ -54,6 +54,7 @@ Parses repository metadata and shows package counts without downloading anything
 |------|---------|-------------|
 | `-config` | `mirrors.yaml` or `mirrors.yml` (next to binary) | Path to config file |
 | `-init` | | Write example config and exit |
+| `-validate` | | Validate config and exit |
 | `-dry-run` | | Preview downloads without writing files |
 | `-version` | | Print version and exit |
 
