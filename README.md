@@ -11,6 +11,7 @@ A single static binary that mirrors RPM (YUM/DNF) and DEB (APT) repositories for
 - Dry-run mode to preview what would be downloaded
 - URL-path-aligned directory layout (mirrors the upstream URL structure)
 - Live progress output with speed and ETA
+- RPM metadata parsing supports global mode selection (`auto`, `sqlite`, `xml`)
 - Sequential per-repo execution with configurable concurrent connections per repo
 - Generates ready-to-use client config files (`.repo`, `.list`, `.sources`)
 - Single static binary — no runtime dependencies
@@ -63,6 +64,7 @@ Parses repository metadata and shows package counts without downloading anything
 ```yaml
 output_dir: ./mirror              # where to write mirrored files
 mirror_url: http://mirror.example.com  # base URL clients use to reach this server
+rpm_primary_metadata: auto        # global: auto, sqlite, or xml
 workers: auto                     # integer (e.g. 4) or auto
 
 rpm_repos:

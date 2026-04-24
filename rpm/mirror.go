@@ -2,6 +2,8 @@
 package rpm
 
 import (
+	"bufio"
+	"database/sql"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -16,6 +18,8 @@ import (
 
 	"repomirror/downloader"
 	"repomirror/gpg"
+
+	_ "modernc.org/sqlite"
 )
 
 // ---------- XML structs for repomd.xml ----------
@@ -62,7 +66,7 @@ type pkgLocation struct {
 // Mirror downloads a YUM/DNF repository rooted at baseURL into destDir.
 // It mirrors the repodata directory exactly and all referenced RPM packages,
 // preserving the upstream directory layout.
-func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, destDir, repoName, gpgKeyURL string, workers int, dl *downloader.Client) error {
+func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadata, destDir, repoName, gpgKeyURL string, workers int, dl *downloader.Client) error {
 	sources, err := resolveRPMSourceURLs(baseURL, mirrorlistURL, metalinkURL, preferredMirror, dl)
 	if err != nil {
 		return fmt.Errorf("[rpm] %s: resolve sources: %w", repoName, err)
@@ -117,8 +121,8 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, destDir, repoN
 	log.Printf("[rpm] %s: repomd.xml loaded (%d metadata records)", repoName, len(rmd.Data))
 
 	// Download all metadata files listed in repomd.xml.
-	// Track the primary metadata URL/dest for later parsing.
-	var primaryRel, primaryDest string
+	// Track primary metadata URL/dest for later parsing.
+	var primaryRel, primaryDest, primaryDBRel, primaryDBDest string
 	for _, d := range rmd.Data {
 		href := strings.TrimLeft(d.Location.Href, "/")
 		fileDest, err := downloader.SafeJoin(destDir, filepath.FromSlash(href))
@@ -134,30 +138,72 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, destDir, repoN
 			primaryRel = href
 			primaryDest = fileDest
 		}
+		if d.Type == "primary_db" {
+			primaryDBRel = href
+			primaryDBDest = fileDest
+		}
 	}
 
 	if primaryRel == "" {
 		return fmt.Errorf("[rpm] %s: no primary metadata found in repomd.xml", repoName)
 	}
-	log.Printf("[rpm] %s: parsing primary metadata", repoName)
+	mode, reason := resolvePrimaryMetadataMode(primaryMetadata, destDir, primaryDBRel != "")
+	if reason != "" {
+		log.Printf("[rpm] %s: primary metadata mode auto -> %s (%s)", repoName, mode, reason)
+	}
+	useSQLite := primaryDBRel != "" && mode != "xml"
+	parseSource := "primary.xml"
+	if useSQLite {
+		parseSource = "primary.sqlite"
+	}
+	log.Printf("[rpm] %s: parsing primary metadata (%s)", repoName, parseSource)
 
 	// Parse primary.xml — in dry-run mode fetch into memory since the file
 	// was never written to disk.
 	var packages []rpmPkg
 	if dl.DryRun {
-		data, _, err := fetchBytesFromSources(dl, ss, primaryRel)
-		if err != nil {
-			return fmt.Errorf("[rpm] %s: fetch primary for parse: %w", repoName, err)
-		}
-		packages, err = parsePrimaryBytes(data, fileExt(primaryRel), repoName)
-		if err != nil {
-			return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, err)
+		if useSQLite {
+			data, _, err := fetchBytesFromSources(dl, ss, primaryDBRel)
+			if err == nil {
+				packages, err = parsePrimaryDBBytes(data, fileExt(primaryDBRel), repoName)
+			}
+			if err != nil {
+				log.Printf("[rpm] %s: primary sqlite unavailable, falling back to primary.xml: %v", repoName, err)
+				data, _, err = fetchBytesFromSources(dl, ss, primaryRel)
+				if err != nil {
+					return fmt.Errorf("[rpm] %s: fetch primary for parse: %w", repoName, err)
+				}
+				packages, err = parsePrimaryBytes(data, fileExt(primaryRel), repoName)
+				if err != nil {
+					return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, err)
+				}
+			}
+		} else {
+			data, _, err := fetchBytesFromSources(dl, ss, primaryRel)
+			if err != nil {
+				return fmt.Errorf("[rpm] %s: fetch primary for parse: %w", repoName, err)
+			}
+			packages, err = parsePrimaryBytes(data, fileExt(primaryRel), repoName)
+			if err != nil {
+				return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, err)
+			}
 		}
 	} else {
 		var parseErr error
-		packages, parseErr = parsePrimary(primaryDest, repoName)
-		if parseErr != nil {
-			return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, parseErr)
+		if useSQLite {
+			packages, parseErr = parsePrimaryDB(primaryDBDest, repoName)
+			if parseErr != nil {
+				log.Printf("[rpm] %s: primary sqlite unavailable, falling back to primary.xml: %v", repoName, parseErr)
+				packages, parseErr = parsePrimary(primaryDest, repoName)
+				if parseErr != nil {
+					return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, parseErr)
+				}
+			}
+		} else {
+			packages, parseErr = parsePrimary(primaryDest, repoName)
+			if parseErr != nil {
+				return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, parseErr)
+			}
 		}
 	}
 
@@ -406,7 +452,8 @@ func parsePrimary(path, repoName string) ([]rpmPkg, error) {
 		return nil, err
 	}
 	defer cleanup()
-	r, stopProgress := withPrimaryParseProgress(r, repoName)
+	total := progressTotalForStream(fileSizeOrUnknown(path), fileExt(path))
+	r, stopProgress := withPrimaryParseProgress(r, repoName, "parsing primary metadata", total)
 	defer stopProgress()
 
 	var pm primaryMD
@@ -435,7 +482,8 @@ func parsePrimaryBytes(data []byte, ext, repoName string) ([]rpmPkg, error) {
 		return nil, err
 	}
 	defer cleanup()
-	r, stopProgress := withPrimaryParseProgress(r, repoName)
+	total := progressTotalForStream(int64(len(data)), ext)
+	r, stopProgress := withPrimaryParseProgress(r, repoName, "parsing primary metadata", total)
 	defer stopProgress()
 
 	var pm primaryMD
@@ -443,6 +491,102 @@ func parsePrimaryBytes(data []byte, ext, repoName string) ([]rpmPkg, error) {
 		return nil, err
 	}
 	return pm.Packages, nil
+}
+
+func parsePrimaryDB(path, repoName string) ([]rpmPkg, error) {
+	r, cleanup, err := openPossiblyCompressed(path)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	total := progressTotalForStream(fileSizeOrUnknown(path), fileExt(path))
+	r, stopProgress := withPrimaryParseProgress(r, repoName, "loading primary sqlite", total)
+	defer stopProgress()
+
+	tmp, err := os.CreateTemp("", "repomirror-primary-*.sqlite")
+	if err != nil {
+		return nil, err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	defer tmp.Close()
+
+	if _, err := io.Copy(tmp, r); err != nil {
+		return nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, err
+	}
+
+	return queryPrimarySQLite(tmpPath, repoName)
+}
+
+func parsePrimaryDBBytes(data []byte, ext, repoName string) ([]rpmPkg, error) {
+	r, cleanup, err := openPossiblyCompressedBytes(data, ext)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	total := progressTotalForStream(int64(len(data)), ext)
+	r, stopProgress := withPrimaryParseProgress(r, repoName, "loading primary sqlite", total)
+	defer stopProgress()
+
+	tmp, err := os.CreateTemp("", "repomirror-primary-*.sqlite")
+	if err != nil {
+		return nil, err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	defer tmp.Close()
+
+	if _, err := io.Copy(tmp, r); err != nil {
+		return nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, err
+	}
+
+	return queryPrimarySQLite(tmpPath, repoName)
+}
+
+func queryPrimarySQLite(path, repoName string) ([]rpmPkg, error) {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	var total int64
+	if err := db.QueryRow("SELECT COUNT(*) FROM packages").Scan(&total); err != nil {
+		return nil, err
+	}
+
+	progress := newParseItemProgress(repoName, "parsing primary metadata", total)
+	defer progress.finish()
+
+	rows, err := db.Query("SELECT location_href, pkgId, checksum_type FROM packages")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	packages := make([]rpmPkg, 0, total)
+	for rows.Next() {
+		var href, pkgID, checksumType string
+		if err := rows.Scan(&href, &pkgID, &checksumType); err != nil {
+			return nil, err
+		}
+		packages = append(packages, rpmPkg{
+			Location: pkgLocation{Href: href},
+			Checksum: checksum{Type: checksumType, Value: pkgID},
+		})
+		progress.inc()
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return packages, nil
 }
 
 type parseProgressReader struct {
@@ -458,21 +602,39 @@ func (p *parseProgressReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
-func withPrimaryParseProgress(r io.Reader, repoName string) (io.Reader, func()) {
+func withPrimaryParseProgress(r io.Reader, repoName, stage string, total int64) (io.Reader, func()) {
 	if repoName == "" {
 		return r, func() {}
 	}
 	var bytesRead atomic.Int64
 	wrapped := &parseProgressReader{r: r, n: &bytesRead}
 	stop := make(chan struct{})
+	interactive := isInteractiveStderr()
+	start := time.Now()
 	go func() {
 		t := time.NewTicker(3 * time.Second)
 		defer t.Stop()
+		spinner := []string{"|", "/", "-", "\\"}
+		spin := 0
+		lastLogged := int64(-1)
 		for {
 			select {
 			case <-t.C:
-				log.Printf("[rpm] %s: parsing primary metadata... %s processed", repoName, formatBytes(float64(bytesRead.Load())))
+				current := bytesRead.Load()
+				line := formatParseProgressLine(repoName, stage, current, total, time.Since(start), spinner[spin%len(spinner)])
+				if interactive {
+					fmt.Fprintf(os.Stderr, "\r\033[K%s", line)
+					spin++
+					continue
+				}
+				if current != lastLogged {
+					log.Printf("%s", line)
+					lastLogged = current
+				}
 			case <-stop:
+				if interactive {
+					fmt.Fprint(os.Stderr, "\r\033[K")
+				}
 				return
 			}
 		}
@@ -485,6 +647,241 @@ func withPrimaryParseProgress(r io.Reader, repoName string) (io.Reader, func()) 
 		close(stop)
 		stopped = true
 	}
+}
+
+type parseItemProgress struct {
+	repoName    string
+	stage       string
+	total       int64
+	done        atomic.Int64
+	start       time.Time
+	stop        chan struct{}
+	interactive bool
+}
+
+func newParseItemProgress(repoName, stage string, total int64) *parseItemProgress {
+	p := &parseItemProgress{
+		repoName:    repoName,
+		stage:       stage,
+		total:       total,
+		start:       time.Now(),
+		stop:        make(chan struct{}),
+		interactive: isInteractiveStderr(),
+	}
+	go p.loop()
+	return p
+}
+
+func (p *parseItemProgress) loop() {
+	t := time.NewTicker(1 * time.Second)
+	defer t.Stop()
+	spinner := []string{"|", "/", "-", "\\"}
+	spin := 0
+	last := int64(-1)
+	for {
+		select {
+		case <-t.C:
+			done := p.done.Load()
+			line := formatParseItemLine(p.repoName, p.stage, done, p.total, time.Since(p.start), spinner[spin%len(spinner)])
+			if p.interactive {
+				fmt.Fprintf(os.Stderr, "\r\033[K%s", line)
+				spin++
+				continue
+			}
+			if done != last {
+				log.Printf("%s", line)
+				last = done
+			}
+		case <-p.stop:
+			if p.interactive {
+				fmt.Fprint(os.Stderr, "\r\033[K")
+			}
+			return
+		}
+	}
+}
+
+func (p *parseItemProgress) inc() {
+	p.done.Add(1)
+}
+
+func (p *parseItemProgress) finish() {
+	close(p.stop)
+}
+
+func formatParseProgressLine(repoName, stage string, processed, total int64, elapsed time.Duration, spinner string) string {
+	speed := float64(processed) / max(elapsed.Seconds(), 0.001)
+	prefix := formatParseRepoPrefix(repoName)
+	if total > 0 {
+		pct := float64(processed) / float64(total) * 100
+		eta := ""
+		if processed > 0 && processed < total {
+			remaining := float64(total-processed) / speed
+			eta = " eta " + formatDuration(time.Duration(remaining)*time.Second)
+		}
+		return fmt.Sprintf("%s %s... %s %s/%s (%.1f%%) %s/s%s", prefix, stage, spinner, formatBytes(float64(processed)), formatBytes(float64(total)), pct, formatBytes(speed), eta)
+	}
+	return fmt.Sprintf("%s %s... %s %s processed %s/s elapsed %s", prefix, stage, spinner, formatBytes(float64(processed)), formatBytes(speed), formatDuration(elapsed))
+}
+
+func formatParseItemLine(repoName, stage string, done, total int64, elapsed time.Duration, spinner string) string {
+	prefix := formatParseRepoPrefix(repoName)
+	rate := float64(done) / max(elapsed.Seconds(), 0.001)
+	if total > 0 {
+		pct := float64(done) / float64(total) * 100
+		eta := ""
+		if done > 0 && done < total {
+			remaining := float64(total-done) / rate
+			eta = " eta " + formatDuration(time.Duration(remaining)*time.Second)
+		}
+		return fmt.Sprintf("%s %s... %s %d/%d (%.1f%%) %.0f/s%s", prefix, stage, spinner, done, total, pct, rate, eta)
+	}
+	return fmt.Sprintf("%s %s... %s %d processed %.0f/s elapsed %s", prefix, stage, spinner, done, rate, formatDuration(elapsed))
+}
+
+func formatParseRepoPrefix(repoName string) string {
+	icon := "pkg"
+	if parseProgressSupportsUnicode() {
+		icon = "📥"
+	}
+	return fmt.Sprintf("[RPM] %s %s:", icon, repoName)
+}
+
+func parseProgressSupportsUnicode() bool {
+	check := strings.ToUpper(os.Getenv("LC_ALL") + " " + os.Getenv("LC_CTYPE") + " " + os.Getenv("LANG"))
+	return strings.Contains(check, "UTF-8") || strings.Contains(check, "UTF8")
+}
+
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh%02dm%02ds", h, m, s)
+	}
+	if m > 0 {
+		return fmt.Sprintf("%dm%02ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
+}
+
+func fileSizeOrUnknown(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return -1
+	}
+	return info.Size()
+}
+
+func progressTotalForStream(total int64, ext string) int64 {
+	switch strings.ToLower(ext) {
+	case ".xz", ".gz", ".bz2":
+		// The progress reader measures decompressed bytes, so compressed size is
+		// not a valid denominator for percent/eta.
+		return -1
+	default:
+		return total
+	}
+}
+
+func resolvePrimaryMetadataMode(rawMode, destDir string, hasPrimaryDB bool) (string, string) {
+	mode := strings.ToLower(strings.TrimSpace(rawMode))
+	if mode == "" {
+		mode = "auto"
+	}
+
+	if mode == "sqlite" && !hasPrimaryDB {
+		return "xml", "primary_db unavailable"
+	}
+	if mode == "xml" || mode == "sqlite" {
+		return mode, ""
+	}
+
+	if !hasPrimaryDB {
+		return "xml", "primary_db unavailable"
+	}
+
+	fsType, ok := filesystemTypeForPath(destDir)
+	if ok {
+		fs := strings.ToLower(fsType)
+		switch fs {
+		case "drvfs", "fuseblk", "ntfs", "ntfs3", "exfat", "vfat", "msdos", "fuse", "9p", "v9fs":
+			return "xml", "filesystem=" + fsType
+		}
+	}
+
+	return "sqlite", ""
+}
+
+func filesystemTypeForPath(target string) (string, bool) {
+	f, err := os.Open("/proc/self/mountinfo")
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+
+	target = filepath.Clean(target)
+	bestMount := ""
+	bestFS := ""
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		line := s.Text()
+		parts := strings.SplitN(line, " - ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		left := strings.Fields(parts[0])
+		right := strings.Fields(parts[1])
+		if len(left) < 5 || len(right) < 1 {
+			continue
+		}
+		mountPoint := decodeMountEscapes(left[4])
+		if !pathWithinMount(target, mountPoint) {
+			continue
+		}
+		if len(mountPoint) >= len(bestMount) {
+			bestMount = mountPoint
+			bestFS = right[0]
+		}
+	}
+
+	if bestFS == "" {
+		return "", false
+	}
+	return bestFS, true
+}
+
+func pathWithinMount(path, mountPoint string) bool {
+	if path == mountPoint {
+		return true
+	}
+	if mountPoint == "/" {
+		return strings.HasPrefix(path, "/")
+	}
+	return strings.HasPrefix(path, mountPoint+"/")
+}
+
+func decodeMountEscapes(s string) string {
+	replacer := strings.NewReplacer(
+		`\040`, " ",
+		`\011`, "\t",
+		`\012`, "\n",
+		`\134`, "\\",
+	)
+	return replacer.Replace(s)
+}
+
+func isInteractiveStderr() bool {
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	fi, err := os.Stderr.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
 }
 
 func formatBytes(n float64) string {

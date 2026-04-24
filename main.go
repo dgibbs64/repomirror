@@ -120,7 +120,7 @@ func main() {
 			path = repo.Name
 		}
 		destDir := filepath.Join(outputDir, filepath.FromSlash(path))
-		if err := rpm.Mirror(repo.BaseURL, repo.Mirrorlist, repo.Metalink, repo.PreferredMirror, destDir, repo.Name, repo.GPGKey, int(cfg.Workers), dl); err != nil {
+		if err := rpm.Mirror(repo.BaseURL, repo.Mirrorlist, repo.Metalink, repo.PreferredMirror, cfg.RPMPrimaryMetadata, destDir, repo.Name, repo.GPGKey, int(cfg.Workers), dl); err != nil {
 			log.Printf("ERROR: %s: %v", path, err)
 			exitCode = 1
 		}

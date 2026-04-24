@@ -2,6 +2,7 @@ package rpm
 
 import (
 	"bytes"
+	"compress/bzip2"
 	"compress/gzip"
 	"io"
 	"os"
@@ -34,6 +35,8 @@ func openPossiblyCompressed(path string) (io.Reader, func(), error) {
 			return nil, nil, err
 		}
 		return xzr, func() { f.Close() }, nil
+	case strings.HasSuffix(lower, ".bz2"):
+		return bzip2.NewReader(f), func() { f.Close() }, nil
 	}
 
 	return f, func() { f.Close() }, nil
@@ -56,6 +59,8 @@ func openPossiblyCompressedBytes(data []byte, ext string) (io.Reader, func(), er
 			return nil, nil, err
 		}
 		return xzr, func() {}, nil
+	case ".bz2":
+		return bzip2.NewReader(r), func() {}, nil
 	}
 	return r, func() {}, nil
 }

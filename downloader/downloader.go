@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -69,8 +70,8 @@ func (c *Client) FetchBytes(url string) ([]byte, error) {
 			lastErr = err
 			continue
 		}
-		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
 			return nil, fmt.Errorf("HTTP %d fetching %s", resp.StatusCode, url)
 		}
 		reader := &transferReader{
@@ -81,6 +82,7 @@ func (c *Client) FetchBytes(url string) ([]byte, error) {
 			total:      resp.ContentLength,
 		}
 		data, err := io.ReadAll(reader)
+		resp.Body.Close()
 		if err != nil {
 			lastErr = err
 			continue
@@ -202,7 +204,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	} else {
 		flag |= os.O_TRUNC
 	}
-	f, err := os.OpenFile(destPath, flag, 0o644)
+	f, err := openFileWithRetry(destPath, flag, 0o644)
 	if err != nil {
 		return err
 	}
@@ -468,4 +470,32 @@ func shortURLForLog(raw string) string {
 		return name[:48] + "..." + name[len(name)-32:]
 	}
 	return name
+}
+
+func openFileWithRetry(path string, flag int, perm os.FileMode) (*os.File, error) {
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		f, err := os.OpenFile(path, flag, perm)
+		if err == nil {
+			return f, nil
+		}
+		lastErr = err
+		if !isTransientMntPathError(path, err) {
+			return nil, err
+		}
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
+	}
+	return nil, lastErr
+}
+
+func isTransientMntPathError(path string, err error) bool {
+	if !strings.HasPrefix(filepath.Clean(path), string(filepath.Separator)+"mnt"+string(filepath.Separator)) {
+		return false
+	}
+	var pe *os.PathError
+	if !errors.As(err, &pe) {
+		return false
+	}
+	return errors.Is(pe.Err, syscall.EINVAL) || errors.Is(pe.Err, syscall.EIO) || errors.Is(pe.Err, syscall.EPERM)
 }

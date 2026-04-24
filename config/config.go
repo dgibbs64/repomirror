@@ -15,6 +15,8 @@ import (
 type Config struct {
 	OutputDir string `yaml:"output_dir"`
 	MirrorURL string `yaml:"mirror_url"` // base URL clients use to reach this mirror, e.g. http://mirror.example.com
+	// RPMPrimaryMetadata controls RPM metadata parsing mode globally: auto, sqlite, or xml.
+	RPMPrimaryMetadata string `yaml:"rpm_primary_metadata"`
 	// Workers accepts an integer (e.g. 4) or "auto" to use runtime.NumCPU().
 	Workers  WorkerCount `yaml:"workers"`
 	RPMRepos []RPMRepo   `yaml:"rpm_repos"`
@@ -101,6 +103,9 @@ func Load(path string) (*Config, error) {
 	if cfg.Workers <= 0 {
 		cfg.Workers = WorkerCount(4)
 	}
+	if strings.TrimSpace(cfg.RPMPrimaryMetadata) == "" {
+		cfg.RPMPrimaryMetadata = "auto"
+	}
 	if err := validate(&cfg); err != nil {
 		return nil, fmt.Errorf("validating config %s: %w", path, err)
 	}
@@ -108,6 +113,12 @@ func Load(path string) (*Config, error) {
 }
 
 func validate(cfg *Config) error {
+	switch strings.ToLower(strings.TrimSpace(cfg.RPMPrimaryMetadata)) {
+	case "auto", "sqlite", "xml":
+	default:
+		return fmt.Errorf("rpm_primary_metadata must be one of auto, sqlite, or xml")
+	}
+
 	for i, r := range cfg.RPMRepos {
 		if strings.TrimSpace(r.BaseURL) == "" && strings.TrimSpace(r.Mirrorlist) == "" && strings.TrimSpace(r.Metalink) == "" {
 			return fmt.Errorf("rpm_repos[%d] (%s): set at least one source URL (base_url, mirrorlist, or metalink)", i, repoDisplayName(r.Name, r.Path))
@@ -152,6 +163,7 @@ func ExampleConfig() string {
 
 output_dir: ./mirror              # root served by nginx/apache
 mirror_url: http://mirror.example.com  # base URL clients use to reach this server
+rpm_primary_metadata: auto        # global: auto, sqlite, or xml
 workers: auto                     # integer (e.g. 4) or auto
 
 rpm_repos:
