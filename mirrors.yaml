@@ -8,7 +8,7 @@
 
 output_dir: ./mirror             # root served by nginx/apache
 mirror_url: http://mirror.example.com  # base URL clients use to reach this server
-workers: 4                       # concurrent download workers
+workers: auto                    # integer (e.g. 4) or auto
 
 rpm_repos:
 

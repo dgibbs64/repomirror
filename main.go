@@ -52,6 +52,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v\n\nRun with -init to generate an example config.", err)
 	}
+	log.Printf("Using %d workers per repo", cfg.Workers)
 	if *validateConfig {
 		fmt.Printf("Config is valid: %s\n", *cfgPath)
 		return
@@ -98,7 +99,7 @@ func main() {
 			path = repo.Name
 		}
 		destDir := filepath.Join(outputDir, filepath.FromSlash(path))
-		if err := deb.Mirror(repo.Mirror, repo.Mirrorlist, repo.Metalink, repo.PreferredMirror, destDir, repo.Name, repo.GPGKey, repo.Suites, repo.Components, repo.Arches, cfg.Workers, dl); err != nil {
+		if err := deb.Mirror(repo.Mirror, repo.Mirrorlist, repo.Metalink, repo.PreferredMirror, destDir, repo.Name, repo.GPGKey, repo.Suites, repo.Components, repo.Arches, int(cfg.Workers), dl); err != nil {
 			log.Printf("ERROR: %s: %v", path, err)
 			exitCode = 1
 		}
@@ -119,7 +120,7 @@ func main() {
 			path = repo.Name
 		}
 		destDir := filepath.Join(outputDir, filepath.FromSlash(path))
-		if err := rpm.Mirror(repo.BaseURL, repo.Mirrorlist, repo.Metalink, repo.PreferredMirror, destDir, repo.Name, repo.GPGKey, cfg.Workers, dl); err != nil {
+		if err := rpm.Mirror(repo.BaseURL, repo.Mirrorlist, repo.Metalink, repo.PreferredMirror, destDir, repo.Name, repo.GPGKey, int(cfg.Workers), dl); err != nil {
 			log.Printf("ERROR: %s: %v", path, err)
 			exitCode = 1
 		}

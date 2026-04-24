@@ -4,12 +4,14 @@ package rpm
 import (
 	"encoding/xml"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"repomirror/downloader"
@@ -147,13 +149,13 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, destDir, repoN
 		if err != nil {
 			return fmt.Errorf("[rpm] %s: fetch primary for parse: %w", repoName, err)
 		}
-		packages, err = parsePrimaryBytes(data, fileExt(primaryRel))
+		packages, err = parsePrimaryBytes(data, fileExt(primaryRel), repoName)
 		if err != nil {
 			return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, err)
 		}
 	} else {
 		var parseErr error
-		packages, parseErr = parsePrimary(primaryDest)
+		packages, parseErr = parsePrimary(primaryDest, repoName)
 		if parseErr != nil {
 			return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, parseErr)
 		}
@@ -398,12 +400,14 @@ func downloadForce(dl *downloader.Client, url, dest string) error {
 }
 
 // parsePrimary reads and parses a possibly gzip-compressed primary.xml file.
-func parsePrimary(path string) ([]rpmPkg, error) {
+func parsePrimary(path, repoName string) ([]rpmPkg, error) {
 	r, cleanup, err := openPossiblyCompressed(path)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
+	r, stopProgress := withPrimaryParseProgress(r, repoName)
+	defer stopProgress()
 
 	var pm primaryMD
 	if err := xml.NewDecoder(r).Decode(&pm); err != nil {
@@ -425,16 +429,73 @@ func fileExt(path string) string {
 
 // parsePrimaryBytes parses a primary.xml from an in-memory byte slice.
 // ext is the file extension (".gz", ".xz", or "") indicating compression.
-func parsePrimaryBytes(data []byte, ext string) ([]rpmPkg, error) {
+func parsePrimaryBytes(data []byte, ext, repoName string) ([]rpmPkg, error) {
 	r, cleanup, err := openPossiblyCompressedBytes(data, ext)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
+	r, stopProgress := withPrimaryParseProgress(r, repoName)
+	defer stopProgress()
 
 	var pm primaryMD
 	if err := xml.NewDecoder(r).Decode(&pm); err != nil {
 		return nil, err
 	}
 	return pm.Packages, nil
+}
+
+type parseProgressReader struct {
+	r io.Reader
+	n *atomic.Int64
+}
+
+func (p *parseProgressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	if n > 0 {
+		p.n.Add(int64(n))
+	}
+	return n, err
+}
+
+func withPrimaryParseProgress(r io.Reader, repoName string) (io.Reader, func()) {
+	if repoName == "" {
+		return r, func() {}
+	}
+	var bytesRead atomic.Int64
+	wrapped := &parseProgressReader{r: r, n: &bytesRead}
+	stop := make(chan struct{})
+	go func() {
+		t := time.NewTicker(3 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				log.Printf("[rpm] %s: parsing primary metadata... %s processed", repoName, formatBytes(float64(bytesRead.Load())))
+			case <-stop:
+				return
+			}
+		}
+	}()
+	stopped := false
+	return wrapped, func() {
+		if stopped {
+			return
+		}
+		close(stop)
+		stopped = true
+	}
+}
+
+func formatBytes(n float64) string {
+	switch {
+	case n >= 1e9:
+		return fmt.Sprintf("%.1f GB", n/1e9)
+	case n >= 1e6:
+		return fmt.Sprintf("%.1f MB", n/1e6)
+	case n >= 1e3:
+		return fmt.Sprintf("%.1f KB", n/1e3)
+	default:
+		return fmt.Sprintf("%.0f B", n)
+	}
 }

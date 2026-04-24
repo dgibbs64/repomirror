@@ -63,7 +63,7 @@ Parses repository metadata and shows package counts without downloading anything
 ```yaml
 output_dir: ./mirror              # where to write mirrored files
 mirror_url: http://mirror.example.com  # base URL clients use to reach this server
-workers: 4                        # concurrent connections per repo
+workers: auto                     # integer (e.g. 4) or auto
 
 rpm_repos:
   - name: centos-9stream-baseos

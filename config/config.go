@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"runtime"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -11,11 +13,36 @@ import (
 
 // Config is the top-level configuration structure read from mirrors.yaml.
 type Config struct {
-	OutputDir string    `yaml:"output_dir"`
-	MirrorURL string    `yaml:"mirror_url"` // base URL clients use to reach this mirror, e.g. http://mirror.example.com
-	Workers   int       `yaml:"workers"`
-	RPMRepos  []RPMRepo `yaml:"rpm_repos"`
-	DEBRepos  []DEBRepo `yaml:"deb_repos"`
+	OutputDir string `yaml:"output_dir"`
+	MirrorURL string `yaml:"mirror_url"` // base URL clients use to reach this mirror, e.g. http://mirror.example.com
+	// Workers accepts an integer (e.g. 4) or "auto" to use runtime.NumCPU().
+	Workers  WorkerCount `yaml:"workers"`
+	RPMRepos []RPMRepo   `yaml:"rpm_repos"`
+	DEBRepos []DEBRepo   `yaml:"deb_repos"`
+}
+
+// WorkerCount supports YAML values like `workers: 4` and `workers: auto`.
+type WorkerCount int
+
+func (w *WorkerCount) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.ScalarNode {
+		return fmt.Errorf("workers must be an integer or 'auto'")
+	}
+	v := strings.TrimSpace(value.Value)
+	if strings.EqualFold(v, "auto") {
+		n := runtime.NumCPU()
+		if n < 1 {
+			n = 1
+		}
+		*w = WorkerCount(n)
+		return nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fmt.Errorf("workers must be an integer or 'auto', got %q", value.Value)
+	}
+	*w = WorkerCount(n)
+	return nil
 }
 
 // RPMRepo describes a YUM/DNF repository to mirror.
@@ -72,7 +99,7 @@ func Load(path string) (*Config, error) {
 		cfg.OutputDir = "."
 	}
 	if cfg.Workers <= 0 {
-		cfg.Workers = 4
+		cfg.Workers = WorkerCount(4)
 	}
 	if err := validate(&cfg); err != nil {
 		return nil, fmt.Errorf("validating config %s: %w", path, err)
@@ -125,7 +152,7 @@ func ExampleConfig() string {
 
 output_dir: ./mirror              # root served by nginx/apache
 mirror_url: http://mirror.example.com  # base URL clients use to reach this server
-workers: 4                            # concurrent download workers
+workers: auto                     # integer (e.g. 4) or auto
 
 rpm_repos:
 

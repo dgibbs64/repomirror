@@ -19,10 +19,18 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const transferActivityInterval = 20 * time.Second
+const checksumCopyBufferSize = 1024 * 1024
+
+var checksumCopyBufPool = sync.Pool{
+	New: func() any {
+		return make([]byte, checksumCopyBufferSize)
+	},
+}
 
 // Client wraps an http.Client with retry and resume logic.
 type Client struct {
@@ -313,7 +321,10 @@ func checksumMatchP(path, algo, expected string, prog *Counter) (bool, error) {
 		reader = &hashProgressReader{r: f, c: prog, display: display, total: total}
 	}
 
-	if _, err := io.Copy(h, reader); err != nil {
+	buf := checksumCopyBufPool.Get().([]byte)
+	defer checksumCopyBufPool.Put(buf)
+
+	if _, err := io.CopyBuffer(h, reader, buf); err != nil {
 		return false, err
 	}
 	actual := hex.EncodeToString(h.Sum(nil))
