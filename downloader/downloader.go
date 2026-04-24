@@ -108,7 +108,7 @@ func (c *Client) DownloadFileP(url, destPath, algo, expected string, prog *Count
 			_ = os.Remove(resumeMarkerPath(destPath))
 			return nil
 		}
-		if ok, _ := checksumMatch(destPath, algo, expected); ok {
+		if ok, _ := checksumMatchP(destPath, algo, expected, prog); ok {
 			_ = writeChecksumCache(destPath, algo, expected, info)
 			_ = os.Remove(resumeMarkerPath(destPath))
 			return nil
@@ -172,7 +172,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	case http.StatusRequestedRangeNotSatisfiable:
 		// File is already complete on disk. Verify checksum if we have one.
 		if expected != "" {
-			ok, err := checksumMatch(destPath, algo, expected)
+			ok, err := checksumMatchP(destPath, algo, expected, prog)
 			if err != nil {
 				return err
 			}
@@ -205,14 +205,14 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 		total = startByte + resp.ContentLength
 	}
 	src := &transferReader{
-		r:          resp.Body,
-		c:          prog,
-		url:        url,
-		display:    shortURLForLog(url),
-		lastReport: time.Now(),
-		nextReport: time.Now().Add(transferActivityInterval),
+		r:           resp.Body,
+		c:           prog,
+		url:         url,
+		display:     shortURLForLog(url),
+		lastReport:  time.Now(),
+		nextReport:  time.Now().Add(transferActivityInterval),
 		transferred: startByte,
-		total:      total,
+		total:       total,
 	}
 	if prog != nil {
 		// Keep the current filename visible immediately, even before first bytes arrive.
@@ -224,7 +224,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 
 	// Verify checksum after writing.
 	if expected != "" {
-		ok, err := checksumMatch(destPath, algo, expected)
+		ok, err := checksumMatchP(destPath, algo, expected, prog)
 		if err != nil {
 			return err
 		}
@@ -268,11 +268,31 @@ func SafeJoin(root, relativePath string) (string, error) {
 
 // checksumMatch returns true if the file at path matches the expected hex digest.
 func checksumMatch(path, algo, expected string) (bool, error) {
+	return checksumMatchP(path, algo, expected, nil)
+}
+
+func checksumMatchP(path, algo, expected string, prog *Counter) (bool, error) {
 	f, err := os.Open(path) // #nosec G304 – path derived from config
 	if err != nil {
 		return false, err
 	}
 	defer f.Close()
+
+	var total int64 = -1
+	if info, err := f.Stat(); err == nil {
+		total = info.Size()
+	}
+	display := filepath.Base(path)
+	if display == "" || display == "." || display == string(filepath.Separator) {
+		display = path
+	}
+	if len(display) > 96 {
+		display = display[:48] + "..." + display[len(display)-32:]
+	}
+	if prog != nil {
+		prog.SetActiveValidation(display, 0, total)
+		defer prog.ClearActiveProgress(display)
+	}
 
 	var h hash.Hash
 	switch strings.ToLower(algo) {
@@ -288,11 +308,33 @@ func checksumMatch(path, algo, expected string) (bool, error) {
 		return false, fmt.Errorf("unknown checksum algorithm: %s", algo)
 	}
 
-	if _, err := io.Copy(h, f); err != nil {
+	reader := io.Reader(f)
+	if prog != nil {
+		reader = &hashProgressReader{r: f, c: prog, display: display, total: total}
+	}
+
+	if _, err := io.Copy(h, reader); err != nil {
 		return false, err
 	}
 	actual := hex.EncodeToString(h.Sum(nil))
 	return strings.EqualFold(actual, expected), nil
+}
+
+type hashProgressReader struct {
+	r           io.Reader
+	c           *Counter
+	display     string
+	transferred int64
+	total       int64
+}
+
+func (hr *hashProgressReader) Read(p []byte) (int, error) {
+	n, err := hr.r.Read(p)
+	if n > 0 {
+		hr.transferred += int64(n)
+		hr.c.SetActiveValidation(hr.display, hr.transferred, hr.total)
+	}
+	return n, err
 }
 
 func checksumCachePath(path string) string {

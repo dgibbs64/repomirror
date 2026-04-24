@@ -84,6 +84,7 @@ type Counter struct {
 	done     atomic.Int64
 	bytes    atomic.Int64
 	active   atomic.Value // string
+	activeOp atomic.Value // "download" | "validate"
 	activeTx atomic.Int64
 	activeSz atomic.Int64 // -1 when unknown
 	start    time.Time
@@ -105,7 +106,16 @@ func (c *Counter) AddBytes(n int64) { c.bytes.Add(n) }
 // SetActiveProgress records the currently active package/file transfer.
 func (c *Counter) SetActiveProgress(name string, transferred, total int64) {
 	c.active.Store(name)
+	c.activeOp.Store("download")
 	c.activeTx.Store(transferred)
+	c.activeSz.Store(total)
+}
+
+// SetActiveValidation records the currently active checksum validation.
+func (c *Counter) SetActiveValidation(name string, validated, total int64) {
+	c.active.Store(name)
+	c.activeOp.Store("validate")
+	c.activeTx.Store(validated)
 	c.activeSz.Store(total)
 }
 
@@ -120,6 +130,7 @@ func (c *Counter) ClearActiveProgress(name string) {
 		return
 	}
 	c.active.Store("")
+	c.activeOp.Store("")
 	c.activeTx.Store(0)
 	c.activeSz.Store(-1)
 }
@@ -146,13 +157,25 @@ func (c *Counter) Log() {
 		eta = fmt.Sprintf(" eta %s", fmtDuration(time.Duration(remaining)*time.Second))
 	}
 
-	base := fmt.Sprintf("%s %s %s %d/%d %s %s/s%s",
+	activeOp := ""
+	if v := c.activeOp.Load(); v != nil {
+		if op, ok := v.(string); ok {
+			activeOp = op
+		}
+	}
+
+	rateText := progressTheme.paint("36", fmtBytes(speed)+"/s")
+	if activeOp == "validate" && bytes == 0 {
+		rateText = progressTheme.paint("35", "validating")
+	}
+
+	base := fmt.Sprintf("%s %s %s %d/%d %s %s%s",
 		progressTheme.typeBadge(c.repoType),
 		progressTheme.icon(c.repoType),
 		progressTheme.paint("1", c.name+":"),
 		done, total,
 		progressTheme.paint("33", fmt.Sprintf("(%.1f%%)", pct)),
-		progressTheme.paint("36", fmtBytes(speed)),
+		rateText,
 		progressTheme.paint("2", eta))
 
 	line := base
@@ -161,15 +184,33 @@ func (c *Counter) Log() {
 		if activeName, ok := v.(string); ok && activeName != "" {
 			activeTx := c.activeTx.Load()
 			activeSz := c.activeSz.Load()
+			op := "download"
+			if ov := c.activeOp.Load(); ov != nil {
+				if s, ok := ov.(string); ok && s != "" {
+					op = s
+				}
+			}
+
 			fileIcon := progressTheme.icon(c.repoType)
+			actionLabel := "downloading"
+			if op == "validate" {
+				actionLabel = "validating"
+				if progressTheme.unicode {
+					fileIcon = "🔎"
+				} else {
+					fileIcon = "chk"
+				}
+			}
 			if activeSz > 0 {
 				activePct := float64(activeTx) / float64(activeSz) * 100
-				line += fmt.Sprintf(" | %s %s %s/%s %s", fileIcon,
+				line += fmt.Sprintf(" | %s %s %s %s/%s %s", fileIcon,
+					progressTheme.paint("2", actionLabel),
 					progressTheme.paint("2", activeName),
 					fmtBytes(float64(activeTx)), fmtBytes(float64(activeSz)),
 					progressTheme.paint("33", fmt.Sprintf("(%.1f%%)", activePct)))
 			} else {
-				line += fmt.Sprintf(" | %s %s %s", fileIcon,
+				line += fmt.Sprintf(" | %s %s %s %s", fileIcon,
+					progressTheme.paint("2", actionLabel),
 					progressTheme.paint("2", activeName),
 					fmtBytes(float64(activeTx)))
 			}
