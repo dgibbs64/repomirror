@@ -433,18 +433,6 @@ func resolveRPMSourceURLs(baseURL, mirrorlistURL, metalinkURL, preferred string,
 	return sources, nil
 }
 
-// downloadForce downloads a file, always overwriting it (for metadata files).
-func downloadForce(dl *downloader.Client, url, dest string) error {
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return err
-	}
-	data, err := dl.FetchBytes(url)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dest, data, 0o644)
-}
-
 // parsePrimary reads and parses a possibly gzip-compressed primary.xml file.
 func parsePrimary(path, repoName string) ([]rpmPkg, error) {
 	r, cleanup, err := openPossiblyCompressed(path)
@@ -466,7 +454,7 @@ func parsePrimary(path, repoName string) ([]rpmPkg, error) {
 // fileExt returns the lowercase extension of a URL or file path.
 func fileExt(path string) string {
 	lower := strings.ToLower(path)
-	for _, ext := range []string{".gz", ".xz", ".bz2"} {
+	for _, ext := range []string{".gz", ".xz", ".bz2", ".zst", ".zstd"} {
 		if strings.HasSuffix(lower, ext) {
 			return ext
 		}

@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -17,11 +18,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 const transferActivityInterval = 20 * time.Second
@@ -32,6 +34,12 @@ var checksumCopyBufPool = sync.Pool{
 		return make([]byte, checksumCopyBufferSize)
 	},
 }
+
+var (
+	stateDBOnce sync.Once
+	stateDB     *sql.DB
+	stateDBErr  error
+)
 
 // Client wraps an http.Client with retry and resume logic.
 type Client struct {
@@ -115,17 +123,17 @@ func (c *Client) DownloadFileP(url, destPath, algo, expected string, prog *Count
 	// avoids re-hashing unchanged files on every run.
 	if expected != "" && statErr == nil {
 		if checksumCacheHit(destPath, algo, expected, info) {
-			_ = os.Remove(resumeMarkerPath(destPath))
+			_ = clearResumeMarker(destPath)
 			return nil
 		}
 		if ok, _ := checksumMatchP(destPath, algo, expected, prog); ok {
 			_ = writeChecksumCache(destPath, algo, expected, info)
-			_ = os.Remove(resumeMarkerPath(destPath))
+			_ = clearResumeMarker(destPath)
 			return nil
 		}
 	} else if statErr == nil {
 		// No checksum provided; skip if file already exists.
-		_ = os.Remove(resumeMarkerPath(destPath))
+		_ = clearResumeMarker(destPath)
 		return nil
 	}
 
@@ -145,18 +153,24 @@ func (c *Client) DownloadFileP(url, destPath, algo, expected string, prog *Count
 }
 
 func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counter) error {
+	writePath := destPath
+	if useTempWritePath(destPath) {
+		writePath = destPath + ".repomirror.part"
+	}
+
 	// Support resuming: check existing partial file size.
 	var startByte int64
-	if info, err := os.Stat(destPath); err == nil {
-		if info.Size() > 0 && trustedResumeMarkerExists(destPath, url) {
+	if info, err := os.Stat(writePath); err == nil {
+		if info.Size() > 0 && trustedResumeMarkerExists(writePath, url) {
 			startByte = info.Size()
 		} else {
 			startByte = 0
 		}
 	}
 
-	if err := writeResumeMarker(destPath, url); err != nil {
-		return err
+	if err := writeResumeMarker(writePath, url); err != nil {
+		// Resume marker is best-effort; log and continue rather than aborting the download.
+		log.Printf("[dl] warning: could not write resume marker for %s: %v", shortURLForLog(url), err)
 	}
 
 	req, err := http.NewRequest(http.MethodGet, url, nil) // #nosec G107
@@ -171,7 +185,11 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
 
 	switch resp.StatusCode {
 	case http.StatusOK:
@@ -182,13 +200,13 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	case http.StatusRequestedRangeNotSatisfiable:
 		// File is already complete on disk. Verify checksum if we have one.
 		if expected != "" {
-			ok, err := checksumMatchP(destPath, algo, expected, prog)
+			ok, err := checksumMatchP(writePath, algo, expected, prog)
 			if err != nil {
 				return err
 			}
 			if !ok {
 				// Corrupt; delete and retry from scratch.
-				os.Remove(destPath)
+				os.Remove(writePath)
 				startByte = 0
 				return c.downloadOnce(url, destPath, algo, expected, prog)
 			}
@@ -204,9 +222,59 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	} else {
 		flag |= os.O_TRUNC
 	}
-	f, err := openFileWithRetry(destPath, flag, 0o644)
+	f, err := openFileWithRetry(writePath, flag, 0o644)
+	if err != nil && isTransientMntPathError(writePath, err) {
+		// Some drvfs/9p paths reject specific open flag combinations intermittently.
+		// Retry with minimal flags, then apply truncate/seek explicitly.
+		f2, err2 := openFileWithRetry(writePath, os.O_CREATE|os.O_WRONLY, 0o644)
+		if err2 == nil {
+			if startByte > 0 {
+				if _, seekErr := f2.Seek(0, io.SeekEnd); seekErr != nil {
+					_ = f2.Close()
+					return seekErr
+				}
+			} else {
+				if truncErr := f2.Truncate(0); truncErr != nil {
+					_ = f2.Close()
+					return truncErr
+				}
+				if _, seekErr := f2.Seek(0, io.SeekStart); seekErr != nil {
+					_ = f2.Close()
+					return seekErr
+				}
+			}
+			f = f2
+			err = nil
+		}
+	}
 	if err != nil {
-		return err
+		if writePath != destPath && isTransientMntPathError(writePath, err) {
+			// Some /mnt filesystems reject temp-file open patterns intermittently;
+			// retry directly against destination path.
+			_ = resp.Body.Close()
+			writePath = destPath
+			startByte = 0
+			req, reqErr := http.NewRequest(http.MethodGet, url, nil) // #nosec G107
+			if reqErr != nil {
+				return reqErr
+			}
+			resp2, doErr := c.HTTP.Do(req)
+			if doErr != nil {
+				return doErr
+			}
+			if resp2.StatusCode != http.StatusOK {
+				_ = resp2.Body.Close()
+				return fmt.Errorf("HTTP %d for %s", resp2.StatusCode, url)
+			}
+			resp = resp2
+			f, err = openFileWithRetry(writePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+			if err != nil {
+				_ = resp.Body.Close()
+				return err
+			}
+		} else {
+			return err
+		}
 	}
 	defer f.Close()
 
@@ -229,26 +297,46 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 		prog.SetActiveProgress(src.display, src.transferred, src.total)
 	}
 	if _, err := io.Copy(f, src); err != nil {
+		// If the file vanished mid-write (e.g. quarantined by antivirus), give a clear message.
+		if _, statErr := os.Stat(writePath); os.IsNotExist(statErr) {
+			return fmt.Errorf("file was removed during download (antivirus quarantine?): %s", writePath)
+		}
 		return err
+	}
+
+	// Check the file still exists before checksum — antivirus can quarantine it immediately after write.
+	if _, statErr := os.Stat(writePath); os.IsNotExist(statErr) {
+		return fmt.Errorf("file was removed after download (antivirus quarantine?): %s", writePath)
 	}
 
 	// Verify checksum after writing.
 	if expected != "" {
-		ok, err := checksumMatchP(destPath, algo, expected, prog)
+		ok, err := checksumMatchP(writePath, algo, expected, prog)
 		if err != nil {
 			return err
 		}
 		if !ok {
-			os.Remove(destPath)
-			_ = os.Remove(checksumCachePath(destPath))
-			_ = os.Remove(resumeMarkerPath(destPath))
-			return fmt.Errorf("checksum mismatch for %s", destPath)
+			os.Remove(writePath)
+			_ = clearChecksumCache(destPath)
+			_ = clearResumeMarker(writePath)
+			return fmt.Errorf("checksum mismatch for %s", writePath)
 		}
+	}
+
+	if writePath != destPath {
+		_ = os.Remove(destPath)
+		if err := os.Rename(writePath, destPath); err != nil {
+			return fmt.Errorf("finalize %s: %w", destPath, err)
+		}
+	}
+
+	if expected != "" {
 		if info, err := os.Stat(destPath); err == nil {
 			_ = writeChecksumCache(destPath, algo, expected, info)
 		}
 	}
-	_ = os.Remove(resumeMarkerPath(destPath))
+	_ = clearResumeMarker(writePath)
+	_ = clearResumeMarker(destPath)
 	return nil
 }
 
@@ -274,11 +362,6 @@ func SafeJoin(root, relativePath string) (string, error) {
 		return "", fmt.Errorf("path escapes destination root: %s", relativePath)
 	}
 	return joined, nil
-}
-
-// checksumMatch returns true if the file at path matches the expected hex digest.
-func checksumMatch(path, algo, expected string) (bool, error) {
-	return checksumMatchP(path, algo, expected, nil)
 }
 
 func checksumMatchP(path, algo, expected string, prog *Counter) (bool, error) {
@@ -350,67 +433,78 @@ func (hr *hashProgressReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func checksumCachePath(path string) string {
-	return path + ".repomirror.checksum"
-}
-
-func resumeMarkerPath(path string) string {
-	return path + ".repomirror.resume"
-}
-
 func trustedResumeMarkerExists(path, url string) bool {
-	b, err := os.ReadFile(resumeMarkerPath(path))
-	if err != nil {
-		return false
+	if db, err := getStateDB(); err == nil {
+		var stored string
+		err = db.QueryRow("SELECT url FROM resume_markers WHERE path = ?", filepath.Clean(path)).Scan(&stored)
+		if err == nil && strings.TrimSpace(stored) == url {
+			return true
+		}
 	}
-	stored := strings.TrimSpace(string(b))
-	return stored == url
+	return false
 }
 
 func writeResumeMarker(path, url string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	if strings.TrimSpace(url) == "" {
 		return errors.New("empty URL for resume marker")
 	}
-	return os.WriteFile(resumeMarkerPath(path), []byte(url+"\n"), 0o644)
+	if db, err := getStateDB(); err == nil {
+		_, err = db.Exec(
+			`INSERT INTO resume_markers(path, url, updated_at)
+			 VALUES(?, ?, strftime('%s','now'))
+			 ON CONFLICT(path) DO UPDATE SET url=excluded.url, updated_at=excluded.updated_at`,
+			filepath.Clean(path),
+			url,
+		)
+		if err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("state db unavailable while writing resume marker")
 }
 
 func checksumCacheHit(path, algo, expected string, info os.FileInfo) bool {
-	b, err := os.ReadFile(checksumCachePath(path))
-	if err != nil {
-		return false
+	if db, err := getStateDB(); err == nil {
+		var sAlgo, sExpected string
+		var sSize, sMtime int64
+		err = db.QueryRow(
+			"SELECT algo, expected, size, mtime FROM checksum_cache WHERE path = ?",
+			filepath.Clean(path),
+		).Scan(&sAlgo, &sExpected, &sSize, &sMtime)
+		if err == nil {
+			if strings.EqualFold(strings.TrimSpace(sAlgo), strings.TrimSpace(algo)) &&
+				strings.EqualFold(strings.TrimSpace(sExpected), strings.TrimSpace(expected)) &&
+				sSize == info.Size() &&
+				sMtime == info.ModTime().UnixNano() {
+				return true
+			}
+		}
 	}
-	parts := strings.Split(strings.TrimSpace(string(b)), "\n")
-	if len(parts) != 4 {
-		return false
-	}
-	if !strings.EqualFold(strings.TrimSpace(parts[0]), strings.TrimSpace(algo)) {
-		return false
-	}
-	if !strings.EqualFold(strings.TrimSpace(parts[1]), strings.TrimSpace(expected)) {
-		return false
-	}
-	size, err := strconv.ParseInt(strings.TrimSpace(parts[2]), 10, 64)
-	if err != nil || size != info.Size() {
-		return false
-	}
-	mtime, err := strconv.ParseInt(strings.TrimSpace(parts[3]), 10, 64)
-	if err != nil || mtime != info.ModTime().UnixNano() {
-		return false
-	}
-	return true
+	return false
 }
 
 func writeChecksumCache(path, algo, expected string, info os.FileInfo) error {
-	content := strings.Join([]string{
-		strings.ToLower(strings.TrimSpace(algo)),
-		strings.ToLower(strings.TrimSpace(expected)),
-		strconv.FormatInt(info.Size(), 10),
-		strconv.FormatInt(info.ModTime().UnixNano(), 10),
-	}, "\n") + "\n"
-	return os.WriteFile(checksumCachePath(path), []byte(content), 0o644)
+	if db, err := getStateDB(); err == nil {
+		_, err = db.Exec(
+			`INSERT INTO checksum_cache(path, algo, expected, size, mtime, updated_at)
+			 VALUES(?, ?, ?, ?, ?, strftime('%s','now'))
+			 ON CONFLICT(path) DO UPDATE SET
+			   algo=excluded.algo,
+			   expected=excluded.expected,
+			   size=excluded.size,
+			   mtime=excluded.mtime,
+			   updated_at=excluded.updated_at`,
+			filepath.Clean(path),
+			strings.ToLower(strings.TrimSpace(algo)),
+			strings.ToLower(strings.TrimSpace(expected)),
+			info.Size(),
+			info.ModTime().UnixNano(),
+		)
+		if err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("state db unavailable while writing checksum cache")
 }
 
 // transferReader reports periodic activity for long-running transfers.
@@ -472,9 +566,78 @@ func shortURLForLog(raw string) string {
 	return name
 }
 
+func sidecarBaseDir() string {
+	if d, err := os.UserCacheDir(); err == nil && strings.TrimSpace(d) != "" {
+		return filepath.Join(d, "repomirror", "state")
+	}
+	return filepath.Join(os.TempDir(), "repomirror-state")
+}
+
+func clearResumeMarker(path string) error {
+	db, err := getStateDB()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("DELETE FROM resume_markers WHERE path = ?", filepath.Clean(path))
+	return err
+}
+
+func clearChecksumCache(path string) error {
+	db, err := getStateDB()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("DELETE FROM checksum_cache WHERE path = ?", filepath.Clean(path))
+	return err
+}
+
+func stateDBPath() string {
+	return filepath.Join(sidecarBaseDir(), "state.db")
+}
+
+func getStateDB() (*sql.DB, error) {
+	stateDBOnce.Do(func() {
+		dbPath := stateDBPath()
+		if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+			stateDBErr = err
+			return
+		}
+		dsn := dbPath + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+		db, err := sql.Open("sqlite", dsn)
+		if err != nil {
+			stateDBErr = err
+			return
+		}
+		if _, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS checksum_cache (
+				path TEXT PRIMARY KEY,
+				algo TEXT NOT NULL,
+				expected TEXT NOT NULL,
+				size INTEGER NOT NULL,
+				mtime INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS resume_markers (
+				path TEXT PRIMARY KEY,
+				url TEXT NOT NULL,
+				updated_at INTEGER NOT NULL
+			);
+		`); err != nil {
+			_ = db.Close()
+			stateDBErr = err
+			return
+		}
+		stateDB = db
+	})
+	if stateDBErr != nil {
+		return nil, stateDBErr
+	}
+	return stateDB, nil
+}
+
 func openFileWithRetry(path string, flag int, perm os.FileMode) (*os.File, error) {
 	var lastErr error
-	for attempt := 0; attempt < 5; attempt++ {
+	for attempt := 0; attempt < 20; attempt++ {
 		f, err := os.OpenFile(path, flag, perm)
 		if err == nil {
 			return f, nil
@@ -483,8 +646,12 @@ func openFileWithRetry(path string, flag int, perm os.FileMode) (*os.File, error
 		if !isTransientMntPathError(path, err) {
 			return nil, err
 		}
+		if info, statErr := os.Lstat(path); statErr == nil && info.IsDir() {
+			// A stale directory at a file path can trigger EINVAL on drvfs mounts.
+			_ = os.Remove(path)
+		}
 		_ = os.MkdirAll(filepath.Dir(path), 0o755)
-		time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
+		time.Sleep(time.Duration(150*(attempt+1)) * time.Millisecond)
 	}
 	return nil, lastErr
 }
@@ -498,4 +665,14 @@ func isTransientMntPathError(path string, err error) bool {
 		return false
 	}
 	return errors.Is(pe.Err, syscall.EINVAL) || errors.Is(pe.Err, syscall.EIO) || errors.Is(pe.Err, syscall.EPERM)
+}
+
+// useTempWritePath returns true when the downloader should write to a .repomirror.part
+// staging file and rename on success, rather than writing directly to destPath.
+// /mnt/* paths (WSL drvfs/9p) are excluded because those mounts can return EINVAL
+// intermittently when opening certain temp file paths.
+func useTempWritePath(path string) bool {
+	clean := filepath.Clean(path)
+	prefix := string(filepath.Separator) + "mnt" + string(filepath.Separator)
+	return !strings.HasPrefix(clean, prefix)
 }
