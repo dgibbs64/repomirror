@@ -69,7 +69,7 @@ func main() {
 		log.Fatalf("create output dir: %v", err)
 	}
 
-	unlock, err := lockOutputTree(outputDir)
+	unlock, err := lockOutputTree(binDir)
 	if err != nil {
 		log.Fatalf("lock output dir: %v", err)
 	}
@@ -160,15 +160,15 @@ func defaultConfigPath(binDir string) string {
 	return yamlPath
 }
 
-func lockOutputTree(outputDir string) (func(), error) {
-	lockPath := filepath.Join(outputDir, ".repomirror.lock")
+func lockOutputTree(lockDir string) (func(), error) {
+	lockPath := filepath.Join(lockDir, ".repomirror.lock")
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("open lock file %s: %w", lockPath, err)
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
-		return nil, fmt.Errorf("another repomirror process is already using %s", outputDir)
+		return nil, fmt.Errorf("another repomirror process is already running")
 	}
 	if err := f.Truncate(0); err != nil {
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
@@ -183,5 +183,6 @@ func lockOutputTree(outputDir string) (func(), error) {
 	return func() {
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		_ = f.Close()
+		_ = os.Remove(lockPath)
 	}, nil
 }
