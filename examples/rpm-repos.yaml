@@ -5,7 +5,6 @@
 # Not all third-party YUM repos publish official mirrorlist/metalink endpoints.
 
 rpm_repos:
-
   # ---------------------------------------------------------------------------
   # Source failover example (base_url + mirrorlist + metalink)
   # Keep base_url as your preferred pinned mirror, and use mirrorlist/metalink

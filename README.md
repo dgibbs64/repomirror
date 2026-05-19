@@ -51,26 +51,26 @@ Parses repository metadata and shows package counts without downloading anything
 
 ### Flags
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-config` | `mirrors.yaml` or `mirrors.yml` (next to binary) | Path to config file |
-| `-init` | | Write example config and exit |
-| `-validate` | | Validate config and exit |
-| `-dry-run` | | Preview downloads without writing files |
-| `-version` | | Print version and exit |
+| Flag        | Default                                          | Description                             |
+| ----------- | ------------------------------------------------ | --------------------------------------- |
+| `-config`   | `mirrors.yaml` or `mirrors.yml` (next to binary) | Path to config file                     |
+| `-init`     |                                                  | Write example config and exit           |
+| `-validate` |                                                  | Validate config and exit                |
+| `-dry-run`  |                                                  | Preview downloads without writing files |
+| `-version`  |                                                  | Print version and exit                  |
 
 ## Configuration
 
 ```yaml
-output_dir: ./mirror              # where to write mirrored files
-mirror_url: http://mirror.example.com  # base URL clients use to reach this server
-rpm_primary_metadata: auto        # global: auto, sqlite, or xml
-workers: auto                     # integer (e.g. 4) or auto
+output_dir: ./mirror # where to write mirrored files
+mirror_url: http://mirror.example.com # base URL clients use to reach this server
+rpm_primary_metadata: auto # global: auto, sqlite, or xml
+workers: auto # integer (e.g. 4) or auto
 
 rpm_repos:
   - name: centos-9stream-baseos
-    enable: true                  # optional; set false to skip this repo
-    path: centos/9-stream/BaseOS/x86_64/os   # output directory under output_dir
+    enable: true # optional; set false to skip this repo
+    path: centos/9-stream/BaseOS/x86_64/os # output directory under output_dir
     base_url: https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/ # explicit mirror (always supported)
     # Optional failover sources:
     # mirrorlist: https://mirrors.example.org/centos-baseos.list
@@ -80,7 +80,7 @@ rpm_repos:
 
 deb_repos:
   - name: ubuntu-jammy
-    enable: true                  # optional; set false to skip this repo
+    enable: true # optional; set false to skip this repo
     path: ubuntu
     mirror: http://archive.ubuntu.com/ubuntu # explicit mirror (always supported)
     # Optional failover sources:
@@ -99,10 +99,10 @@ See [mirrors.yaml](mirrors.yaml) for a full working example covering CentOS Stre
 
 The [examples/](examples/) directory contains ready-to-paste snippets for common repositories:
 
-| File | Contents |
-|------|----------|
+| File                                               | Contents                                                                                                                                                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [examples/rpm-repos.yaml](examples/rpm-repos.yaml) | CentOS Stream 9, Rocky Linux 8/9, AlmaLinux 8/9, Fedora 42, EPEL 8/9, Zabbix 6.0/7.0, PostgreSQL 16/17, MySQL 8.0, Docker CE, Elasticsearch/OpenSearch, Microsoft, HashiCorp, Grafana, InfluxDB, Nginx, MariaDB, MongoDB, Kubernetes |
-| [examples/deb-repos.yaml](examples/deb-repos.yaml) | Ubuntu 20.04/22.04/24.04/26.04, Debian 11/12, Zabbix 6.0/7.0, PostgreSQL, Docker CE, Elasticsearch, Microsoft, HashiCorp, Grafana, InfluxDB, Nginx, MariaDB, MongoDB, Kubernetes |
+| [examples/deb-repos.yaml](examples/deb-repos.yaml) | Ubuntu 20.04/22.04/24.04/26.04, Debian 11/12, Zabbix 6.0/7.0, PostgreSQL, Docker CE, Elasticsearch, Microsoft, HashiCorp, Grafana, InfluxDB, Nginx, MariaDB, MongoDB, Kubernetes                                                     |
 
 Copy the relevant blocks into the `rpm_repos` or `deb_repos` section of your `mirrors.yaml`.
 
@@ -204,4 +204,3 @@ For a fully static binary:
 ```bash
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o repomirror .
 ```
-

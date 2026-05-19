@@ -4,7 +4,6 @@
 # Not all third-party APT repos publish official mirrorlist/metalink endpoints.
 
 deb_repos:
-
   # ---------------------------------------------------------------------------
   # Source failover example (mirror + mirrorlist + metalink)
   # Keep mirror as your preferred pinned source, and use mirrorlist/metalink

@@ -6,13 +6,12 @@
 #   deb http://example.com/ubuntu jammy main
 #   baseurl=http://example.com/centos/9-stream/BaseOS/x86_64/os/
 
-output_dir: ./mirror             # root served by nginx/apache
-mirror_url: http://mirror.example.com  # base URL clients use to reach this server
-rpm_primary_metadata: auto       # global: auto, sqlite, or xml
-workers: auto                    # integer (e.g. 4) or auto
+output_dir: ./mirror # root served by nginx/apache
+mirror_url: http://mirror.example.com # base URL clients use to reach this server
+rpm_primary_metadata: auto # global: auto, sqlite, or xml
+workers: auto # integer (e.g. 4) or auto
 
 rpm_repos:
-
   # CentOS Stream 9 — BaseOS
   # Client .repo: baseurl=http://example.com/centos/9-stream/BaseOS/x86_64/os/
   - name: centos-9stream-baseos
@@ -53,7 +52,6 @@ rpm_repos:
     gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
 
 deb_repos:
-
   # Ubuntu 22.04 LTS (Jammy)
   # Client sources.list: deb http://example.com/ubuntu jammy main restricted universe
   - name: ubuntu-jammy
