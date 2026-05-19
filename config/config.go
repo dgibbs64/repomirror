@@ -131,11 +131,17 @@ func validate(cfg *Config) error {
 		if len(r.Suites) == 0 {
 			return fmt.Errorf("deb_repos[%d] (%s): suites must not be empty", i, repoDisplayName(r.Name, r.Path))
 		}
-		if len(r.Components) == 0 {
-			return fmt.Errorf("deb_repos[%d] (%s): components must not be empty", i, repoDisplayName(r.Name, r.Path))
-		}
-		if len(r.Arches) == 0 {
-			return fmt.Errorf("deb_repos[%d] (%s): arches must not be empty", i, repoDisplayName(r.Name, r.Path))
+		// Flat (trivial) repos use suite "/" and have no component/arch structure
+		// in their metadata — the Packages file lives at the mirror root and
+		// covers all arches. Skip the component/arch checks for those.
+		flat := len(r.Suites) == 1 && r.Suites[0] == "/"
+		if !flat {
+			if len(r.Components) == 0 {
+				return fmt.Errorf("deb_repos[%d] (%s): components must not be empty", i, repoDisplayName(r.Name, r.Path))
+			}
+			if len(r.Arches) == 0 {
+				return fmt.Errorf("deb_repos[%d] (%s): arches must not be empty", i, repoDisplayName(r.Name, r.Path))
+			}
 		}
 	}
 	return nil

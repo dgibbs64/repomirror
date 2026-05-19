@@ -120,8 +120,12 @@ type metaEntry struct {
 }
 
 // mirrorSuite fetches the InRelease file for one suite, downloads all metadata
-// files listed in it, then collects all package URLs.
+// files listed in it, then collects all package URLs. When suite is "/" the
+// repo uses a flat (trivial) layout and mirrorFlatSuite is called instead.
 func mirrorSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, repoName, suite string, components, arches []string) ([]pkgEntry, error) {
+	if suite == "/" {
+		return mirrorFlatSuite(dl, ss, destDir, repoName, arches)
+	}
 	distDest := filepath.Join(destDir, "dists", suite)
 
 	// Try InRelease first, fall back to Release + Release.gpg.
@@ -223,9 +227,9 @@ func mirrorSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, repoN
 				log.Printf("[deb] suite %s: fetch for parse %s: %v", suite, m.relPath, err)
 				continue
 			}
-			pkgs, parseErr = parsePackagesBytes(data, m.isGz)
+			pkgs, parseErr = parsePackagesBytes(data, m.isGz, nil)
 		} else {
-			pkgs, parseErr = parsePackagesFile(m.dest)
+			pkgs, parseErr = parsePackagesFile(m.dest, nil)
 		}
 		if parseErr != nil {
 			log.Printf("[deb] suite %s: parse %s: %v", suite, m.dest, parseErr)
@@ -249,6 +253,95 @@ func mirrorSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, repoN
 		}
 	}
 
+	return entries, nil
+}
+
+// mirrorFlatSuite mirrors a flat (trivial) APT repository where InRelease and
+// Packages sit at the mirror root rather than under dists/. Used by repos such
+// as pkgs.k8s.io that use suite "/" in their sources.list line.
+func mirrorFlatSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, repoName string, arches []string) ([]pkgEntry, error) {
+	releaseData, _, err := downloader.FetchBytesFromSources(dl, ss, "InRelease")
+	if err != nil {
+		releaseData, _, err = downloader.FetchBytesFromSources(dl, ss, "Release")
+		if err != nil {
+			return nil, fmt.Errorf("fetch Release for flat repo: %w", err)
+		}
+		if !dl.DryRun {
+			if err := writeFile(filepath.Join(destDir, "Release"), releaseData); err != nil {
+				return nil, err
+			}
+			_ = downloader.DownloadFileFromSources(dl, ss, "Release.gpg", filepath.Join(destDir, "Release.gpg"), "", "", nil)
+		}
+	} else if !dl.DryRun {
+		if err := writeFile(filepath.Join(destDir, "InRelease"), releaseData); err != nil {
+			return nil, err
+		}
+	}
+
+	rmeta := parseReleaseMetadata(releaseData)
+
+	// Prefer Packages.gz; fall back to uncompressed Packages.
+	var pkgMeta []metaEntry
+	_, hasGz := rmeta.checksums["Packages.gz"]
+	for _, filename := range []string{"Packages", "Packages.gz"} {
+		if filename == "Packages" && hasGz {
+			continue
+		}
+		fileDest, err := downloader.SafeJoin(destDir, filename)
+		if err != nil {
+			continue
+		}
+		entry, ok := rmeta.checksums[filename]
+		var algo, sum string
+		if ok {
+			algo, sum = entry.algo, entry.sum
+		}
+		if err := downloader.DownloadFileFromSources(dl, ss, filename, fileDest, algo, sum, nil); err != nil {
+			continue
+		}
+		pkgMeta = append(pkgMeta, metaEntry{
+			relPath: filename,
+			dest:    fileDest,
+			isGz:    strings.HasSuffix(filename, ".gz"),
+		})
+	}
+
+	seen := map[string]bool{}
+	var entries []pkgEntry
+	for _, m := range pkgMeta {
+		var pkgs []debPkg
+		var parseErr error
+		if dl.DryRun {
+			data, _, err := downloader.FetchBytesFromSources(dl, ss, m.relPath)
+			if err != nil {
+				log.Printf("[deb] %s flat repo: fetch for parse %s: %v", repoName, m.relPath, err)
+				continue
+			}
+			pkgs, parseErr = parsePackagesBytes(data, m.isGz, arches)
+		} else {
+			pkgs, parseErr = parsePackagesFile(m.dest, arches)
+		}
+		if parseErr != nil {
+			log.Printf("[deb] %s flat repo: parse %s: %v", repoName, m.dest, parseErr)
+			continue
+		}
+		for _, p := range pkgs {
+			if seen[p.filename] {
+				continue
+			}
+			seen[p.filename] = true
+			pkgDest, err := downloader.SafeJoin(destDir, filepath.FromSlash(p.filename))
+			if err != nil {
+				continue
+			}
+			entries = append(entries, pkgEntry{
+				relPath:  strings.TrimLeft(p.filename, "/"),
+				dest:     pkgDest,
+				algo:     p.algo,
+				checksum: p.sum,
+			})
+		}
+	}
 	return entries, nil
 }
 
@@ -390,8 +483,10 @@ type debPkg struct {
 	sum      string
 }
 
-// parsePackagesFile reads a Packages or Packages.gz file and returns package entries.
-func parsePackagesFile(path string) ([]debPkg, error) {
+// parsePackagesFile reads a Packages or Packages.gz file and returns package
+// entries. If arches is non-empty only packages matching those architectures
+// are included (used for flat repos where one Packages file covers all arches).
+func parsePackagesFile(path string, arches []string) ([]debPkg, error) {
 	f, err := os.Open(path) // #nosec G304 – path derived from config
 	if err != nil {
 		return nil, err
@@ -408,12 +503,13 @@ func parsePackagesFile(path string) ([]debPkg, error) {
 		r = gz
 	}
 
-	return scanPackages(r), nil
+	return scanPackages(r, arches), nil
 }
 
 // parsePackagesBytes parses a Packages file from an in-memory byte slice.
-// isGz indicates whether the bytes are gzip-compressed.
-func parsePackagesBytes(data []byte, isGz bool) ([]debPkg, error) {
+// isGz indicates whether the bytes are gzip-compressed. arches behaves as in
+// parsePackagesFile.
+func parsePackagesBytes(data []byte, isGz bool, arches []string) ([]debPkg, error) {
 	var r io.Reader = bytes.NewReader(data)
 	if isGz {
 		gz, err := gzip.NewReader(r)
@@ -423,12 +519,22 @@ func parsePackagesBytes(data []byte, isGz bool) ([]debPkg, error) {
 		defer gz.Close()
 		r = gz
 	}
-	return scanPackages(r), nil
+	return scanPackages(r, arches), nil
 }
 
-func scanPackages(r io.Reader) []debPkg {
+// scanPackages parses a Debian Packages control file. If arches is non-empty,
+// only entries whose Architecture field matches one of the listed values are
+// returned.
+func scanPackages(r io.Reader, arches []string) []debPkg {
+	archSet := make(map[string]bool, len(arches))
+	for _, a := range arches {
+		archSet[a] = true
+	}
+	filterArches := len(archSet) > 0
+
 	var pkgs []debPkg
 	var current debPkg
+	var currentArch string
 
 	scanner := bufio.NewScanner(r)
 	// Packages files can have very long lines.
@@ -437,14 +543,18 @@ func scanPackages(r io.Reader) []debPkg {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
-			if current.filename != "" {
+			if current.filename != "" && (!filterArches || archSet[currentArch]) {
 				pkgs = append(pkgs, current)
 			}
 			current = debPkg{}
+			currentArch = ""
 			continue
 		}
 		if val, ok := fieldValue(line, "Filename"); ok {
 			current.filename = val
+		}
+		if val, ok := fieldValue(line, "Architecture"); ok {
+			currentArch = val
 		}
 		// Prefer SHA256 > SHA1 > MD5.
 		if current.algo != "sha256" {
@@ -463,7 +573,7 @@ func scanPackages(r io.Reader) []debPkg {
 		}
 	}
 	// Handle last stanza without trailing blank line.
-	if current.filename != "" {
+	if current.filename != "" && (!filterArches || archSet[currentArch]) {
 		pkgs = append(pkgs, current)
 	}
 	return pkgs
