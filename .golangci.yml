@@ -1,0 +1,4 @@
+linters-settings:
+  errcheck:
+    # Allow _ = fn() for intentionally-ignored cleanup errors (unlock, cache writes, etc.)
+    check-blank: false

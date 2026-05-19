@@ -403,13 +403,13 @@ rpm_repos:
   # Kubernetes
   # ---------------------------------------------------------------------------
   - name: kubernetes-1.32
-    enable: true
+    enable: false # pkgs.k8s.io blocks automated access from CI runners; enable for production use
     path: kubernetes/1.32/rpm/x86_64
     base_url: https://pkgs.k8s.io/core:/stable:/v1.32/rpm/x86_64/
     gpg_key: https://pkgs.k8s.io/core:/stable:/v1.32/rpm/repodata/repomd.xml.key
 
   - name: kubernetes-1.31
-    enable: true
+    enable: false # pkgs.k8s.io blocks automated access from CI runners; enable for production use
     path: kubernetes/1.31/rpm/x86_64
     base_url: https://pkgs.k8s.io/core:/stable:/v1.31/rpm/x86_64/
     gpg_key: https://pkgs.k8s.io/core:/stable:/v1.31/rpm/repodata/repomd.xml.key

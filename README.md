@@ -112,7 +112,7 @@ Files are written under `output_dir` using the `path` field from each repo entry
 
 Example:
 
-```
+```text
 mirror/
   centos/9-stream/BaseOS/x86_64/os/
   ubuntu/
@@ -143,7 +143,7 @@ Set `mirror_url: http://mirror.example.com` in `mirrors.yaml` to match.
 
 When `mirror_url` is set, repomirror generates client config files after each run under `output_dir/client-configs/`:
 
-```
+```text
 client-configs/
   yum.repos.d/
     centos-9stream-baseos.repo      ← drop in /etc/yum.repos.d/
@@ -166,7 +166,7 @@ dnf makecache
 
 Each `.list` file includes a `signed-by=` option and a comment with the GPG import command:
 
-```
+```text
 # Import GPG key: curl -fsSL https://... | gpg --dearmor -o /etc/apt/keyrings/ubuntu-jammy.gpg
 deb [signed-by=/etc/apt/keyrings/ubuntu-jammy.gpg] http://mirror.example.com/ubuntu jammy main restricted universe
 ```
