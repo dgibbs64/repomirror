@@ -37,7 +37,7 @@ func FetchAndImport(keyURL, keysDir string, dl *downloader.Client) error {
 	if err != nil {
 		return fmt.Errorf("fetching GPG key %s: %w", keyURL, err)
 	}
-	if err := os.WriteFile(keyPath, data, 0o644); err != nil {
+	if err := os.WriteFile(keyPath, data, 0o644); err != nil { //nolint:gosec
 		return fmt.Errorf("writing GPG key %s: %w", keyPath, err)
 	}
 

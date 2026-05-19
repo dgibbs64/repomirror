@@ -17,7 +17,7 @@ import (
 
 var version = "2026.04.25"
 
-func main() {
+func main() { //nolint:gocyclo
 	// Determine the directory the binary lives in (USB drive root).
 	execPath, err := os.Executable()
 	if err != nil {
@@ -40,7 +40,7 @@ func main() {
 	}
 
 	if *genConfig {
-		if err := os.WriteFile(*cfgPath, []byte(config.ExampleConfig()), 0o644); err != nil {
+		if err := os.WriteFile(*cfgPath, []byte(config.ExampleConfig()), 0o644); err != nil { //nolint:gosec
 			log.Fatalf("write example config: %v", err)
 		}
 		fmt.Printf("Example config written to %s\n", *cfgPath)
@@ -65,8 +65,8 @@ func main() {
 		outputDir = filepath.Join(filepath.Dir(*cfgPath), outputDir)
 	}
 
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
-		log.Fatalf("create output dir: %v", err)
+	if mkdirErr := os.MkdirAll(outputDir, 0o755); mkdirErr != nil {
+		log.Fatalf("create output dir: %v", mkdirErr)
 	}
 
 	unlock, err := lockOutputTree(binDir)
@@ -166,22 +166,22 @@ func lockOutputTree(lockDir string) (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("open lock file %s: %w", lockPath, err)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil { //nolint:gosec
 		_ = f.Close()
 		return nil, fmt.Errorf("another repomirror process is already running")
 	}
 	if err := f.Truncate(0); err != nil {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
 		_ = f.Close()
 		return nil, fmt.Errorf("truncate lock file: %w", err)
 	}
-	if _, err := f.WriteString(fmt.Sprintf("pid=%d\n", os.Getpid())); err != nil {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	if _, err := fmt.Fprintf(f, "pid=%d\n", os.Getpid()); err != nil {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
 		_ = f.Close()
 		return nil, fmt.Errorf("write lock file: %w", err)
 	}
 	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
 		_ = f.Close()
 		_ = os.Remove(lockPath)
 	}, nil

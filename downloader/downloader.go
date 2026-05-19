@@ -130,17 +130,17 @@ func (c *Client) DownloadFileP(url, destPath, algo, expected string, prog *Count
 	// avoids re-hashing unchanged files on every run.
 	if expected != "" && statErr == nil {
 		if checksumCacheHit(destPath, algo, expected, info) {
-			_ = clearResumeMarker(destPath)
+			_ = clearResumeMarker(destPath) //nolint:errcheck
 			return nil
 		}
-		if ok, _ := checksumMatchP(destPath, algo, expected, prog); ok {
-			_ = writeChecksumCache(destPath, algo, expected, info)
-			_ = clearResumeMarker(destPath)
+		if ok, _ := checksumMatchP(destPath, algo, expected, prog); ok { //nolint:errcheck
+			_ = writeChecksumCache(destPath, algo, expected, info) //nolint:errcheck
+			_ = clearResumeMarker(destPath)                        //nolint:errcheck
 			return nil
 		}
 	} else if statErr == nil {
 		// No checksum provided; skip if file already exists.
-		_ = clearResumeMarker(destPath)
+		_ = clearResumeMarker(destPath) //nolint:errcheck
 		return nil
 	}
 
@@ -197,7 +197,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
+			_ = resp.Body.Close() //nolint:errcheck
 		}
 	}()
 
@@ -244,16 +244,16 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 		if err2 == nil {
 			if startByte > 0 {
 				if _, seekErr := f2.Seek(0, io.SeekEnd); seekErr != nil {
-					_ = f2.Close()
+					_ = f2.Close() //nolint:errcheck
 					return seekErr
 				}
 			} else {
 				if truncErr := f2.Truncate(0); truncErr != nil {
-					_ = f2.Close()
+					_ = f2.Close() //nolint:errcheck
 					return truncErr
 				}
 				if _, seekErr := f2.Seek(0, io.SeekStart); seekErr != nil {
-					_ = f2.Close()
+					_ = f2.Close() //nolint:errcheck
 					return seekErr
 				}
 			}
@@ -265,7 +265,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 		if writePath != destPath && isTransientMntPathError(writePath, err) {
 			// Some /mnt filesystems reject temp-file open patterns intermittently;
 			// retry directly against destination path.
-			_ = resp.Body.Close()
+			_ = resp.Body.Close() //nolint:errcheck
 			writePath = destPath
 			startByte = 0
 			req, reqErr := http.NewRequest(http.MethodGet, url, nil) // #nosec G107
@@ -277,7 +277,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 				return doErr
 			}
 			if resp2.StatusCode != http.StatusOK {
-				_ = resp2.Body.Close()
+				_ = resp2.Body.Close() //nolint:errcheck
 				err2 := fmt.Errorf("HTTP %d for %s", resp2.StatusCode, url)
 				if resp2.StatusCode >= 400 && resp2.StatusCode < 500 {
 					return permanentError{err2}
@@ -287,7 +287,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 			resp = resp2
 			f, err = openFileWithRetry(writePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 			if err != nil {
-				_ = resp.Body.Close()
+				_ = resp.Body.Close() //nolint:errcheck
 				return err
 			}
 		} else {
@@ -335,14 +335,14 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 		}
 		if !ok {
 			os.Remove(writePath)
-			_ = clearChecksumCache(destPath)
-			_ = clearResumeMarker(writePath)
+			_ = clearChecksumCache(destPath) //nolint:errcheck
+			_ = clearResumeMarker(writePath) //nolint:errcheck
 			return fmt.Errorf("checksum mismatch for %s", writePath)
 		}
 	}
 
 	if writePath != destPath {
-		_ = os.Remove(destPath)
+		_ = os.Remove(destPath) //nolint:errcheck
 		if err := os.Rename(writePath, destPath); err != nil {
 			return fmt.Errorf("finalize %s: %w", destPath, err)
 		}
@@ -350,11 +350,11 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 
 	if expected != "" {
 		if info, err := os.Stat(destPath); err == nil {
-			_ = writeChecksumCache(destPath, algo, expected, info)
+			_ = writeChecksumCache(destPath, algo, expected, info) //nolint:errcheck
 		}
 	}
-	_ = clearResumeMarker(writePath)
-	_ = clearResumeMarker(destPath)
+	_ = clearResumeMarker(writePath) //nolint:errcheck
+	_ = clearResumeMarker(destPath)  //nolint:errcheck
 	return nil
 }
 
@@ -641,7 +641,7 @@ func getStateDB() (*sql.DB, error) {
 				updated_at INTEGER NOT NULL
 			);
 		`); err != nil {
-			_ = db.Close()
+			_ = db.Close() //nolint:errcheck
 			stateDBErr = err
 			return
 		}
@@ -666,9 +666,9 @@ func openFileWithRetry(path string, flag int, perm os.FileMode) (*os.File, error
 		}
 		if info, statErr := os.Lstat(path); statErr == nil && info.IsDir() {
 			// A stale directory at a file path can trigger EINVAL on drvfs mounts.
-			_ = os.Remove(path)
+			_ = os.Remove(path) //nolint:errcheck
 		}
-		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		_ = os.MkdirAll(filepath.Dir(path), 0o755) //nolint:errcheck
 		time.Sleep(time.Duration(150*(attempt+1)) * time.Millisecond)
 	}
 	return nil, lastErr

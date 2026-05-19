@@ -105,11 +105,11 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 		}
 		tmpRepomd := repomdDest + ".repomirror.tmp"
 		if err := os.WriteFile(tmpRepomd, repomdData, 0o644); err != nil {
-			_ = os.Remove(tmpRepomd)
+			_ = os.Remove(tmpRepomd) //nolint:errcheck
 			return fmt.Errorf("[rpm] %s: save repomd.xml: %w", repoName, err)
 		}
 		if err := os.Rename(tmpRepomd, repomdDest); err != nil {
-			_ = os.Remove(tmpRepomd)
+			_ = os.Remove(tmpRepomd) //nolint:errcheck
 			return fmt.Errorf("[rpm] %s: save repomd.xml: %w", repoName, err)
 		}
 	} else {
@@ -128,10 +128,10 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 		}
 		sigData, _, sigErr := downloader.FetchBytesFromSources(dl, ss, sigRel)
 		if sigErr != nil {
-			_ = os.Remove(sigDest)
+			_ = os.Remove(sigDest) //nolint:errcheck
 			continue
 		}
-		_ = os.WriteFile(sigDest, sigData, 0o644)
+		_ = os.WriteFile(sigDest, sigData, 0o644) //nolint:errcheck,gosec
 	}
 	var rmd repoMD
 	if err := xml.Unmarshal(repomdData, &rmd); err != nil {

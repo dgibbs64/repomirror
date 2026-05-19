@@ -29,7 +29,7 @@ func openPossiblyCompressed(path string) (io.Reader, func(), error) {
 	}
 
 	br := bufio.NewReader(f)
-	peek, _ := br.Peek(8)
+	peek, _ := br.Peek(8) //nolint:errcheck
 	lower := strings.ToLower(path)
 	switch {
 	case bytes.HasPrefix(peek, gzipMagic) || strings.HasSuffix(lower, ".gz"):

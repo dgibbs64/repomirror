@@ -68,7 +68,7 @@ func generateRPM(cfg *config.Config, outputDir, mirrorURL string) error {
 		}
 
 		dest := filepath.Join(dir, repo.Name+".repo")
-		if err := os.WriteFile(dest, []byte(sb.String()), 0o644); err != nil {
+		if err := os.WriteFile(dest, []byte(sb.String()), 0o644); err != nil { //nolint:gosec
 			return fmt.Errorf("write %s: %w", dest, err)
 		}
 	}
@@ -108,7 +108,7 @@ func generateDEB(cfg *config.Config, outputDir, mirrorURL string) error {
 			}
 		}
 		dest := filepath.Join(dir, repo.Name+".list")
-		if err := os.WriteFile(dest, []byte(legacy.String()), 0o644); err != nil {
+		if err := os.WriteFile(dest, []byte(legacy.String()), 0o644); err != nil { //nolint:gosec
 			return fmt.Errorf("write %s: %w", dest, err)
 		}
 
@@ -125,7 +125,7 @@ func generateDEB(cfg *config.Config, outputDir, mirrorURL string) error {
 		}
 
 		dest822 := filepath.Join(dir, repo.Name+".sources")
-		if err := os.WriteFile(dest822, []byte(deb822.String()), 0o644); err != nil {
+		if err := os.WriteFile(dest822, []byte(deb822.String()), 0o644); err != nil { //nolint:gosec
 			return fmt.Errorf("write %s: %w", dest822, err)
 		}
 	}

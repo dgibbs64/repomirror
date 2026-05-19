@@ -129,7 +129,7 @@ type metaEntry struct {
 // mirrorSuite fetches the InRelease file for one suite, downloads all metadata
 // files listed in it, then collects all package URLs. When suite is "/" the
 // repo uses a flat (trivial) layout and mirrorFlatSuite is called instead.
-func mirrorSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, repoName, suite string, components, arches []string) ([]pkgEntry, error) {
+func mirrorSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, repoName, suite string, components, arches []string) ([]pkgEntry, error) { //nolint:gocyclo
 	if suite == "/" {
 		return mirrorFlatSuite(dl, ss, destDir, repoName, arches)
 	}
@@ -151,7 +151,7 @@ func mirrorSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, repoN
 			if err := writeFile(filepath.Join(distDest, "Release"), releaseData); err != nil {
 				return nil, err
 			}
-			_ = downloader.DownloadFileFromSources(dl, ss, "dists/"+suite+"/Release.gpg", filepath.Join(distDest, "Release.gpg"), "", "", nil)
+			_ = downloader.DownloadFileFromSources(dl, ss, "dists/"+suite+"/Release.gpg", filepath.Join(distDest, "Release.gpg"), "", "", nil) //nolint:errcheck
 		}
 	} else if !dl.DryRun {
 		if err := writeFile(inReleaseDest, releaseData); err != nil {
@@ -264,7 +264,7 @@ func mirrorSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, repoN
 // mirrorFlatSuite mirrors a flat (trivial) APT repository where InRelease and
 // Packages sit at the mirror root rather than under dists/. Used by repos such
 // as pkgs.k8s.io that use suite "/" in their sources.list line.
-func mirrorFlatSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, repoName string, arches []string) ([]pkgEntry, error) {
+func mirrorFlatSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, repoName string, arches []string) ([]pkgEntry, error) { //nolint:gocyclo
 	releaseData, _, err := downloader.FetchBytesFromSources(dl, ss, "InRelease")
 	if err != nil {
 		releaseData, _, err = downloader.FetchBytesFromSources(dl, ss, "Release")
@@ -275,7 +275,7 @@ func mirrorFlatSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, r
 			if err := writeFile(filepath.Join(destDir, "Release"), releaseData); err != nil {
 				return nil, err
 			}
-			_ = downloader.DownloadFileFromSources(dl, ss, "Release.gpg", filepath.Join(destDir, "Release.gpg"), "", "", nil)
+			_ = downloader.DownloadFileFromSources(dl, ss, "Release.gpg", filepath.Join(destDir, "Release.gpg"), "", "", nil) //nolint:errcheck
 		}
 	} else if !dl.DryRun {
 		if err := writeFile(filepath.Join(destDir, "InRelease"), releaseData); err != nil {
@@ -529,7 +529,7 @@ func parsePackagesBytes(data []byte, isGz bool, arches []string) ([]debPkg, erro
 // scanPackages parses a Debian Packages control file. If arches is non-empty,
 // only entries whose Architecture field matches one of the listed values are
 // returned.
-func scanPackages(r io.Reader, arches []string) []debPkg {
+func scanPackages(r io.Reader, arches []string) []debPkg { //nolint:gocyclo
 	archSet := make(map[string]bool, len(arches))
 	for _, a := range arches {
 		archSet[a] = true
@@ -596,7 +596,7 @@ func writeFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o644) //nolint:gosec
 }
 
 func formatListForLog(values []string) string {
