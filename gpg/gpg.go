@@ -13,7 +13,7 @@ import (
 
 // FetchAndImport downloads the GPG key at keyURL, saves it to keysDir, and
 // imports it into the system GPG keyring so that signature verification tools
-// can use it. It is a no-op if the key file already exists.
+// can use it. Skips the network fetch if the key file already exists.
 func FetchAndImport(keyURL, keysDir string, dl *downloader.Client) error {
 	if keyURL == "" {
 		return nil
@@ -23,14 +23,16 @@ func FetchAndImport(keyURL, keysDir string, dl *downloader.Client) error {
 		return fmt.Errorf("mkdir %s: %w", keysDir, err)
 	}
 
-	// Derive a safe filename from the URL.
 	base := filepath.Base(keyURL)
 	if base == "" || base == "." {
 		base = "gpg.key"
 	}
 	keyPath := filepath.Join(keysDir, base)
 
-	// Download the key (skips if already present).
+	if _, err := os.Stat(keyPath); err == nil {
+		return importKey(keyPath)
+	}
+
 	data, err := dl.FetchBytes(keyURL)
 	if err != nil {
 		return fmt.Errorf("fetching GPG key %s: %w", keyURL, err)
@@ -48,17 +50,6 @@ func importKey(keyPath string) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("gpg --import %s: %w\n%s", keyPath, err, out)
-	}
-	return nil
-}
-
-// VerifyDetached verifies a file against a detached GPG signature file.
-// sigPath is the .gpg or .asc detached signature.
-func VerifyDetached(dataPath, sigPath string) error {
-	cmd := exec.Command("gpg", "--verify", sigPath, dataPath) // #nosec G204
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("gpg --verify %s %s: %w\n%s", sigPath, dataPath, err, out)
 	}
 	return nil
 }

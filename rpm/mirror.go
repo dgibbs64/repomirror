@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -67,13 +66,13 @@ type pkgLocation struct {
 // It mirrors the repodata directory exactly and all referenced RPM packages,
 // preserving the upstream directory layout.
 func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadata, destDir, repoName, gpgKeyURL string, workers int, dl *downloader.Client) error {
-	sources, err := resolveRPMSourceURLs(baseURL, mirrorlistURL, metalinkURL, preferredMirror, dl)
+	sources, err := downloader.ResolveSourceURLs(baseURL, mirrorlistURL, metalinkURL, preferredMirror, "RPM", dl)
 	if err != nil {
 		return fmt.Errorf("[rpm] %s: resolve sources: %w", repoName, err)
 	}
-	ss := newSourceSet(sources)
+	ss := downloader.NewSourceSet(sources)
 
-	baseURL = strings.TrimRight(ss.primary(), "/")
+	baseURL = strings.TrimRight(ss.Primary(), "/")
 
 	log.Printf("[rpm] %s  →  %s", baseURL, destDir)
 	log.Printf("[rpm] %s: preparing metadata (workers=%d)", repoName, workers)
@@ -92,7 +91,7 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 	repomdURL := baseURL + "/" + repomdRel
 	repomdDest := filepath.Join(destDir, "repodata", "repomd.xml")
 	log.Printf("[rpm] %s: fetching repomd.xml", repoName)
-	repomdData, usedBase, err := fetchBytesFromSources(dl, ss, repomdRel)
+	repomdData, usedBase, err := downloader.FetchBytesFromSources(dl, ss, repomdRel)
 	if err != nil {
 		return fmt.Errorf("[rpm] %s: fetch repomd.xml: %w", repoName, err)
 	}
@@ -127,7 +126,7 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 			log.Printf("[dry-run] would download: %s", sigURL)
 			continue
 		}
-		sigData, _, sigErr := fetchBytesFromSources(dl, ss, sigRel)
+		sigData, _, sigErr := downloader.FetchBytesFromSources(dl, ss, sigRel)
 		if sigErr != nil {
 			_ = os.Remove(sigDest)
 			continue
@@ -150,7 +149,7 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 			log.Printf("[rpm] %s: metadata %s: %v", repoName, href, err)
 			continue
 		}
-		if err := downloadFileFromSources(dl, ss, href, fileDest, d.Checksum.Type, strings.TrimSpace(d.Checksum.Value), nil); err != nil {
+		if err := downloader.DownloadFileFromSources(dl, ss, href, fileDest, d.Checksum.Type, strings.TrimSpace(d.Checksum.Value), nil); err != nil {
 			log.Printf("[rpm] %s: metadata %s: %v", repoName, href, err)
 			continue
 		}
@@ -183,13 +182,13 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 	var packages []rpmPkg
 	if dl.DryRun {
 		if useSQLite {
-			data, _, err := fetchBytesFromSources(dl, ss, primaryDBRel)
+			data, _, err := downloader.FetchBytesFromSources(dl, ss, primaryDBRel)
 			if err == nil {
 				packages, err = parsePrimaryDBBytes(data, fileExt(primaryDBRel), repoName)
 			}
 			if err != nil {
 				log.Printf("[rpm] %s: primary sqlite unavailable, falling back to primary.xml: %v", repoName, err)
-				data, _, err = fetchBytesFromSources(dl, ss, primaryRel)
+				data, _, err = downloader.FetchBytesFromSources(dl, ss, primaryRel)
 				if err != nil {
 					return fmt.Errorf("[rpm] %s: fetch primary for parse: %w", repoName, err)
 				}
@@ -199,7 +198,7 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 				}
 			}
 		} else {
-			data, _, err := fetchBytesFromSources(dl, ss, primaryRel)
+			data, _, err := downloader.FetchBytesFromSources(dl, ss, primaryRel)
 			if err != nil {
 				return fmt.Errorf("[rpm] %s: fetch primary for parse: %w", repoName, err)
 			}
@@ -239,12 +238,9 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 	}
 
 	// Download packages concurrently.
-	type job struct {
-		pkg rpmPkg
-	}
-	jobs := make(chan job, len(packages))
+	jobs := make(chan rpmPkg, len(packages))
 	for _, p := range packages {
-		jobs <- job{p}
+		jobs <- p
 	}
 	close(jobs)
 
@@ -256,7 +252,7 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
-				href := strings.TrimLeft(j.pkg.Location.Href, "/")
+				href := strings.TrimLeft(j.Location.Href, "/")
 				pkgDest, err := downloader.SafeJoin(destDir, filepath.FromSlash(href))
 				if err != nil {
 					errs <- fmt.Errorf("%s: %w", href, err)
@@ -265,7 +261,7 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 					}
 					continue
 				}
-				if err := downloadFileFromSources(dl, ss, href, pkgDest, j.pkg.Checksum.Type, strings.TrimSpace(j.pkg.Checksum.Value), prog); err != nil {
+				if err := downloader.DownloadFileFromSources(dl, ss, href, pkgDest, j.Checksum.Type, strings.TrimSpace(j.Checksum.Value), prog); err != nil {
 					errs <- fmt.Errorf("%s: %w", href, err)
 				}
 				if prog != nil {
@@ -293,165 +289,6 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 	return nil
 }
 
-type sourceSet struct {
-	mu   sync.Mutex
-	urls []string
-}
-
-func newSourceSet(urls []string) *sourceSet {
-	return &sourceSet{urls: append([]string(nil), urls...)}
-}
-
-func (s *sourceSet) primary() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.urls) == 0 {
-		return ""
-	}
-	return s.urls[0]
-}
-
-func (s *sourceSet) ordered() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]string(nil), s.urls...)
-}
-
-func (s *sourceSet) markSuccess(baseURL string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	idx := -1
-	for i, u := range s.urls {
-		if u == baseURL {
-			idx = i
-			break
-		}
-	}
-	if idx <= 0 {
-		return
-	}
-	s.urls[0], s.urls[idx] = s.urls[idx], s.urls[0]
-}
-
-func downloadFileFromSources(dl *downloader.Client, ss *sourceSet, relPath, dest, algo, expected string, prog *downloader.Counter) error {
-	rel := strings.TrimLeft(relPath, "/")
-	ordered := ss.ordered()
-	var lastErr error
-	for _, base := range ordered {
-		url := strings.TrimRight(base, "/") + "/" + rel
-		if err := dl.DownloadFileP(url, dest, algo, expected, prog); err != nil {
-			lastErr = err
-			continue
-		}
-		ss.markSuccess(base)
-		return nil
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("no source URLs configured")
-	}
-	return lastErr
-}
-
-func fetchBytesFromSources(dl *downloader.Client, ss *sourceSet, relPath string) ([]byte, string, error) {
-	rel := strings.TrimLeft(relPath, "/")
-	ordered := ss.ordered()
-	var lastErr error
-	for _, base := range ordered {
-		url := strings.TrimRight(base, "/") + "/" + rel
-		data, err := dl.FetchBytes(url)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		ss.markSuccess(base)
-		return data, base, nil
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("no source URLs configured")
-	}
-	return nil, "", lastErr
-}
-
-func resolveRPMSourceURLs(baseURL, mirrorlistURL, metalinkURL, preferred string, dl *downloader.Client) ([]string, error) {
-	var sources []string
-	add := func(raw string) {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			return
-		}
-		raw = strings.TrimRight(raw, "/")
-		if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
-			return
-		}
-		for _, existing := range sources {
-			if existing == raw {
-				return
-			}
-		}
-		sources = append(sources, raw)
-	}
-
-	add(baseURL)
-
-	if mirrorlistURL != "" {
-		data, err := dl.FetchBytes(mirrorlistURL)
-		if err != nil {
-			return nil, fmt.Errorf("fetch mirrorlist: %w", err)
-		}
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			add(line)
-		}
-	}
-
-	if metalinkURL != "" {
-		data, err := dl.FetchBytes(metalinkURL)
-		if err != nil {
-			return nil, fmt.Errorf("fetch metalink: %w", err)
-		}
-		var ml struct {
-			URLs []struct {
-				Protocol string `xml:"protocol,attr"`
-				Value    string `xml:",chardata"`
-			} `xml:"files>file>resources>url"`
-		}
-		if err := xml.Unmarshal(data, &ml); err != nil {
-			return nil, fmt.Errorf("parse metalink: %w", err)
-		}
-		for _, u := range ml.URLs {
-			p := strings.ToLower(strings.TrimSpace(u.Protocol))
-			if p != "" && p != "http" && p != "https" {
-				continue
-			}
-			add(u.Value)
-		}
-	}
-
-	if len(sources) == 0 {
-		return nil, fmt.Errorf("no RPM source URL configured (set base_url, mirrorlist, or metalink)")
-	}
-
-	if preferred != "" {
-		preferred = strings.ToLower(strings.TrimSpace(preferred))
-		slices.SortStableFunc(sources, func(a, b string) int {
-			aa := strings.Contains(strings.ToLower(a), preferred)
-			bb := strings.Contains(strings.ToLower(b), preferred)
-			switch {
-			case aa && !bb:
-				return -1
-			case !aa && bb:
-				return 1
-			default:
-				return 0
-			}
-		})
-	}
-
-	return sources, nil
-}
 
 // parsePrimary reads and parses a possibly gzip-compressed primary.xml file.
 func parsePrimary(path, repoName string) ([]rpmPkg, error) {
@@ -509,10 +346,10 @@ func parsePrimaryDB(path, repoName string) ([]rpmPkg, error) {
 	defer cleanup()
 	total := progressTotalForStream(fileSizeOrUnknown(path), fileExt(path))
 	r, stopProgress := withPrimaryParseProgress(r, repoName, "loading primary sqlite", total)
-	defer stopProgress()
 
 	tmp, err := os.CreateTemp("", "repomirror-primary-*.sqlite")
 	if err != nil {
+		stopProgress()
 		return nil, err
 	}
 	tmpPath := tmp.Name()
@@ -520,11 +357,14 @@ func parsePrimaryDB(path, repoName string) ([]rpmPkg, error) {
 	defer tmp.Close()
 
 	if _, err := io.Copy(tmp, r); err != nil {
+		stopProgress()
 		return nil, err
 	}
 	if err := tmp.Close(); err != nil {
+		stopProgress()
 		return nil, err
 	}
+	stopProgress() // end byte-progress before starting the SQL item-progress
 
 	return queryPrimarySQLite(tmpPath, repoName)
 }
@@ -537,10 +377,10 @@ func parsePrimaryDBBytes(data []byte, ext, repoName string) ([]rpmPkg, error) {
 	defer cleanup()
 	total := progressTotalForStream(int64(len(data)), ext)
 	r, stopProgress := withPrimaryParseProgress(r, repoName, "loading primary sqlite", total)
-	defer stopProgress()
 
 	tmp, err := os.CreateTemp("", "repomirror-primary-*.sqlite")
 	if err != nil {
+		stopProgress()
 		return nil, err
 	}
 	tmpPath := tmp.Name()
@@ -548,11 +388,14 @@ func parsePrimaryDBBytes(data []byte, ext, repoName string) ([]rpmPkg, error) {
 	defer tmp.Close()
 
 	if _, err := io.Copy(tmp, r); err != nil {
+		stopProgress()
 		return nil, err
 	}
 	if err := tmp.Close(); err != nil {
+		stopProgress()
 		return nil, err
 	}
+	stopProgress() // end byte-progress before starting the SQL item-progress
 
 	return queryPrimarySQLite(tmpPath, repoName)
 }
@@ -617,7 +460,7 @@ func withPrimaryParseProgress(r io.Reader, repoName, stage string, total int64) 
 	var bytesRead atomic.Int64
 	wrapped := &parseProgressReader{r: r, n: &bytesRead}
 	stop := make(chan struct{})
-	interactive := isInteractiveStderr()
+	interactive := downloader.IsInteractiveStderr()
 	start := time.Now()
 	go func() {
 		t := time.NewTicker(3 * time.Second)
@@ -647,14 +490,8 @@ func withPrimaryParseProgress(r io.Reader, repoName, stage string, total int64) 
 			}
 		}
 	}()
-	stopped := false
-	return wrapped, func() {
-		if stopped {
-			return
-		}
-		close(stop)
-		stopped = true
-	}
+	var once sync.Once
+	return wrapped, func() { once.Do(func() { close(stop) }) }
 }
 
 type parseItemProgress struct {
@@ -674,7 +511,7 @@ func newParseItemProgress(repoName, stage string, total int64) *parseItemProgres
 		total:       total,
 		start:       time.Now(),
 		stop:        make(chan struct{}),
-		interactive: isInteractiveStderr(),
+		interactive: downloader.IsInteractiveStderr(),
 	}
 	go p.loop()
 	return p
@@ -725,11 +562,11 @@ func formatParseProgressLine(repoName, stage string, processed, total int64, ela
 		eta := ""
 		if processed > 0 && processed < total {
 			remaining := float64(total-processed) / speed
-			eta = " eta " + formatDuration(time.Duration(remaining)*time.Second)
+			eta = " eta " + downloader.FmtDuration(time.Duration(remaining)*time.Second)
 		}
-		return fmt.Sprintf("%s %s... %s %s/%s (%.1f%%) %s/s%s", prefix, stage, spinner, formatBytes(float64(processed)), formatBytes(float64(total)), pct, formatBytes(speed), eta)
+		return fmt.Sprintf("%s %s... %s %s/%s (%.1f%%) %s/s%s", prefix, stage, spinner, downloader.FmtBytes(float64(processed)), downloader.FmtBytes(float64(total)), pct, downloader.FmtBytes(speed), eta)
 	}
-	return fmt.Sprintf("%s %s... %s %s processed %s/s elapsed %s", prefix, stage, spinner, formatBytes(float64(processed)), formatBytes(speed), formatDuration(elapsed))
+	return fmt.Sprintf("%s %s... %s %s processed %s/s elapsed %s", prefix, stage, spinner, downloader.FmtBytes(float64(processed)), downloader.FmtBytes(speed), downloader.FmtDuration(elapsed))
 }
 
 func formatParseItemLine(repoName, stage string, done, total int64, elapsed time.Duration, spinner string) string {
@@ -740,38 +577,19 @@ func formatParseItemLine(repoName, stage string, done, total int64, elapsed time
 		eta := ""
 		if done > 0 && done < total {
 			remaining := float64(total-done) / rate
-			eta = " eta " + formatDuration(time.Duration(remaining)*time.Second)
+			eta = " eta " + downloader.FmtDuration(time.Duration(remaining)*time.Second)
 		}
 		return fmt.Sprintf("%s %s... %s %d/%d (%.1f%%) %.0f/s%s", prefix, stage, spinner, done, total, pct, rate, eta)
 	}
-	return fmt.Sprintf("%s %s... %s %d processed %.0f/s elapsed %s", prefix, stage, spinner, done, rate, formatDuration(elapsed))
+	return fmt.Sprintf("%s %s... %s %d processed %.0f/s elapsed %s", prefix, stage, spinner, done, rate, downloader.FmtDuration(elapsed))
 }
 
 func formatParseRepoPrefix(repoName string) string {
 	icon := "pkg"
-	if parseProgressSupportsUnicode() {
+	if downloader.SupportsUnicode() {
 		icon = "📥"
 	}
 	return fmt.Sprintf("[RPM] %s %s:", icon, repoName)
-}
-
-func parseProgressSupportsUnicode() bool {
-	check := strings.ToUpper(os.Getenv("LC_ALL") + " " + os.Getenv("LC_CTYPE") + " " + os.Getenv("LANG"))
-	return strings.Contains(check, "UTF-8") || strings.Contains(check, "UTF8")
-}
-
-func formatDuration(d time.Duration) string {
-	d = d.Round(time.Second)
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	s := int(d.Seconds()) % 60
-	if h > 0 {
-		return fmt.Sprintf("%dh%02dm%02ds", h, m, s)
-	}
-	if m > 0 {
-		return fmt.Sprintf("%dm%02ds", m, s)
-	}
-	return fmt.Sprintf("%ds", s)
 }
 
 func fileSizeOrUnknown(path string) int64 {
@@ -881,26 +699,3 @@ func decodeMountEscapes(s string) string {
 	return replacer.Replace(s)
 }
 
-func isInteractiveStderr() bool {
-	if os.Getenv("TERM") == "dumb" {
-		return false
-	}
-	fi, err := os.Stderr.Stat()
-	if err != nil {
-		return false
-	}
-	return (fi.Mode() & os.ModeCharDevice) != 0
-}
-
-func formatBytes(n float64) string {
-	switch {
-	case n >= 1e9:
-		return fmt.Sprintf("%.1f GB", n/1e9)
-	case n >= 1e6:
-		return fmt.Sprintf("%.1f MB", n/1e6)
-	case n >= 1e3:
-		return fmt.Sprintf("%.1f KB", n/1e3)
-	default:
-		return fmt.Sprintf("%.0f B", n)
-	}
-}

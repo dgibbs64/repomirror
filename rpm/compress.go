@@ -32,23 +32,23 @@ func openPossiblyCompressed(path string) (io.Reader, func(), error) {
 	peek, _ := br.Peek(8)
 	lower := strings.ToLower(path)
 	switch {
-	case hasPrefix(peek, gzipMagic) || strings.HasSuffix(lower, ".gz"):
+	case bytes.HasPrefix(peek, gzipMagic) || strings.HasSuffix(lower, ".gz"):
 		gz, err := gzip.NewReader(br)
 		if err != nil {
 			f.Close()
 			return nil, nil, err
 		}
 		return gz, func() { gz.Close(); f.Close() }, nil
-	case hasPrefix(peek, xzMagic) || strings.HasSuffix(lower, ".xz"):
+	case bytes.HasPrefix(peek, xzMagic) || strings.HasSuffix(lower, ".xz"):
 		xzr, err := xz.NewReader(br)
 		if err != nil {
 			f.Close()
 			return nil, nil, err
 		}
 		return xzr, func() { f.Close() }, nil
-	case hasPrefix(peek, bz2Magic) || strings.HasSuffix(lower, ".bz2"):
+	case bytes.HasPrefix(peek, bz2Magic) || strings.HasSuffix(lower, ".bz2"):
 		return bzip2.NewReader(br), func() { f.Close() }, nil
-	case hasPrefix(peek, zstdMagic) || strings.HasSuffix(lower, ".zst") || strings.HasSuffix(lower, ".zstd"):
+	case bytes.HasPrefix(peek, zstdMagic) || strings.HasSuffix(lower, ".zst") || strings.HasSuffix(lower, ".zstd"):
 		zr, err := zstd.NewReader(br)
 		if err != nil {
 			f.Close()
@@ -91,21 +91,21 @@ func openPossiblyCompressedBytes(data []byte, ext string) (io.Reader, func(), er
 
 	// Extension is unreliable in some repos, so detect by magic bytes.
 	switch {
-	case hasPrefix(peek, gzipMagic):
+	case bytes.HasPrefix(peek, gzipMagic):
 		gz, err := gzip.NewReader(bytes.NewReader(data))
 		if err != nil {
 			return nil, nil, err
 		}
 		return gz, func() { gz.Close() }, nil
-	case hasPrefix(peek, xzMagic):
+	case bytes.HasPrefix(peek, xzMagic):
 		xzr, err := xz.NewReader(bytes.NewReader(data))
 		if err != nil {
 			return nil, nil, err
 		}
 		return xzr, func() {}, nil
-	case hasPrefix(peek, bz2Magic):
+	case bytes.HasPrefix(peek, bz2Magic):
 		return bzip2.NewReader(bytes.NewReader(data)), func() {}, nil
-	case hasPrefix(peek, zstdMagic):
+	case bytes.HasPrefix(peek, zstdMagic):
 		zr, err := zstd.NewReader(bytes.NewReader(data))
 		if err != nil {
 			return nil, nil, err
@@ -113,16 +113,4 @@ func openPossiblyCompressedBytes(data []byte, ext string) (io.Reader, func(), er
 		return zr, func() { zr.Close() }, nil
 	}
 	return r, func() {}, nil
-}
-
-func hasPrefix(buf, sig []byte) bool {
-	if len(buf) < len(sig) {
-		return false
-	}
-	for i := range sig {
-		if buf[i] != sig[i] {
-			return false
-		}
-	}
-	return true
 }

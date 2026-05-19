@@ -2,7 +2,6 @@ package downloader
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"regexp"
@@ -23,7 +22,7 @@ var progressTheme = detectTermTheme()
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func detectTermTheme() termTheme {
-	unicode := supportsUnicode()
+	unicode := SupportsUnicode()
 	if os.Getenv("NO_COLOR") != "" {
 		return termTheme{color: false, unicode: unicode}
 	}
@@ -40,9 +39,22 @@ func detectTermTheme() termTheme {
 	return termTheme{color: true, unicode: unicode}
 }
 
-func supportsUnicode() bool {
+// SupportsUnicode reports whether the terminal locale is UTF-8 capable.
+func SupportsUnicode() bool {
 	check := strings.ToUpper(os.Getenv("LC_ALL") + " " + os.Getenv("LC_CTYPE") + " " + os.Getenv("LANG"))
 	return strings.Contains(check, "UTF-8") || strings.Contains(check, "UTF8")
+}
+
+// IsInteractiveStderr reports whether stderr is an interactive terminal.
+func IsInteractiveStderr() bool {
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	fi, err := os.Stderr.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
 }
 
 func (t termTheme) paint(code, s string) string {
@@ -154,7 +166,7 @@ func (c *Counter) Log() {
 	var eta string
 	if done > 0 && done < total {
 		remaining := float64(total-done) * (elapsed / float64(done))
-		eta = fmt.Sprintf(" eta %s", fmtDuration(time.Duration(remaining)*time.Second))
+		eta = fmt.Sprintf(" eta %s", FmtDuration(time.Duration(remaining)*time.Second))
 	}
 
 	activeOp := ""
@@ -164,7 +176,7 @@ func (c *Counter) Log() {
 		}
 	}
 
-	rateText := progressTheme.paint("36", fmtBytes(speed)+"/s")
+	rateText := progressTheme.paint("36", FmtBytes(speed)+"/s")
 	if activeOp == "validate" && bytes == 0 {
 		rateText = progressTheme.paint("35", "validating")
 	}
@@ -185,10 +197,8 @@ func (c *Counter) Log() {
 			activeTx := c.activeTx.Load()
 			activeSz := c.activeSz.Load()
 			op := "download"
-			if ov := c.activeOp.Load(); ov != nil {
-				if s, ok := ov.(string); ok && s != "" {
-					op = s
-				}
+			if activeOp != "" {
+				op = activeOp
 			}
 
 			fileIcon := progressTheme.icon(c.repoType)
@@ -206,13 +216,13 @@ func (c *Counter) Log() {
 				line += fmt.Sprintf(" | %s %s %s %s/%s %s", fileIcon,
 					progressTheme.paint("2", actionLabel),
 					progressTheme.paint("2", activeName),
-					fmtBytes(float64(activeTx)), fmtBytes(float64(activeSz)),
+					FmtBytes(float64(activeTx)), FmtBytes(float64(activeSz)),
 					progressTheme.paint("33", fmt.Sprintf("(%.1f%%)", activePct)))
 			} else {
 				line += fmt.Sprintf(" | %s %s %s %s", fileIcon,
 					progressTheme.paint("2", actionLabel),
 					progressTheme.paint("2", activeName),
-					fmtBytes(float64(activeTx)))
+					FmtBytes(float64(activeTx)))
 			}
 		}
 	}
@@ -248,13 +258,13 @@ func (c *Counter) Finish() {
 
 	avgStr := ""
 	if s := elapsed.Seconds(); s > 0 {
-		avgStr = fmt.Sprintf(" avg %s/s", fmtBytes(float64(bytes)/s))
+		avgStr = fmt.Sprintf(" avg %s/s", FmtBytes(float64(bytes)/s))
 	}
 	log.Printf("%s %s %s done %s in %s%s",
 		progressTheme.typeBadge(c.repoType),
 		progressTheme.icon(c.repoType),
 		c.name+":",
-		fmtBytes(float64(bytes)), fmtDuration(elapsed), avgStr)
+		FmtBytes(float64(bytes)), FmtDuration(elapsed), avgStr)
 }
 
 // StartLogger refreshes the progress line every interval until stop is closed.
@@ -344,7 +354,8 @@ func trimVisual(s string, max int) string {
 	return string(r[:max-1]) + "…"
 }
 
-func fmtBytes(n float64) string {
+// FmtBytes formats a byte count as a human-readable string.
+func FmtBytes(n float64) string {
 	switch {
 	case n >= 1e9:
 		return fmt.Sprintf("%.1f GB", n/1e9)
@@ -357,7 +368,8 @@ func fmtBytes(n float64) string {
 	}
 }
 
-func fmtDuration(d time.Duration) string {
+// FmtDuration formats a duration as a compact human-readable string.
+func FmtDuration(d time.Duration) string {
 	d = d.Round(time.Second)
 	h := int(d.Hours())
 	m := int(d.Minutes()) % 60
@@ -369,18 +381,4 @@ func fmtDuration(d time.Duration) string {
 		return fmt.Sprintf("%dm%02ds", m, s)
 	}
 	return fmt.Sprintf("%ds", s)
-}
-
-// countingReader wraps an io.Reader and records each read's byte count into a Counter.
-type countingReader struct {
-	r io.Reader
-	c *Counter
-}
-
-func (cr *countingReader) Read(p []byte) (int, error) {
-	n, err := cr.r.Read(p)
-	if n > 0 {
-		cr.c.AddBytes(int64(n))
-	}
-	return n, err
 }

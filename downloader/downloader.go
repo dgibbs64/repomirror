@@ -27,6 +27,12 @@ import (
 )
 
 const transferActivityInterval = 20 * time.Second
+
+// permanentError wraps an error that should not be retried (e.g. HTTP 4xx).
+type permanentError struct{ err error }
+
+func (e permanentError) Error() string { return e.err.Error() }
+func (e permanentError) Unwrap() error { return e.err }
 const checksumCopyBufferSize = 1024 * 1024
 
 var checksumCopyBufPool = sync.Pool{
@@ -145,6 +151,9 @@ func (c *Client) DownloadFileP(url, destPath, algo, expected string, prog *Count
 	for attempt := 0; attempt <= c.Retries; attempt++ {
 		if err := c.downloadOnce(url, destPath, algo, expected, prog); err != nil {
 			lastErr = err
+			if errors.As(err, new(permanentError)) {
+				break
+			}
 			continue
 		}
 		return nil
@@ -213,7 +222,11 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 		}
 		return nil
 	default:
-		return fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
+		err := fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return permanentError{err}
+		}
+		return err
 	}
 
 	flag := os.O_CREATE | os.O_WRONLY
@@ -264,7 +277,11 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 			}
 			if resp2.StatusCode != http.StatusOK {
 				_ = resp2.Body.Close()
-				return fmt.Errorf("HTTP %d for %s", resp2.StatusCode, url)
+				err2 := fmt.Errorf("HTTP %d for %s", resp2.StatusCode, url)
+				if resp2.StatusCode >= 400 && resp2.StatusCode < 500 {
+					return permanentError{err2}
+				}
+				return err2
 			}
 			resp = resp2
 			f, err = openFileWithRetry(writePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
@@ -549,10 +566,10 @@ func (tr *transferReader) report(now time.Time) {
 	}
 	if tr.total > 0 {
 		pct := float64(tr.transferred) / float64(tr.total) * 100
-		log.Printf("[dl] active %s: %s/%s (%.1f%%)", shortURLForLog(tr.url), fmtBytes(float64(tr.transferred)), fmtBytes(float64(tr.total)), pct)
+		log.Printf("[dl] active %s: %s/%s (%.1f%%)", shortURLForLog(tr.url), FmtBytes(float64(tr.transferred)), FmtBytes(float64(tr.total)), pct)
 		return
 	}
-	log.Printf("[dl] active %s: %s transferred", shortURLForLog(tr.url), fmtBytes(float64(tr.transferred)))
+	log.Printf("[dl] active %s: %s transferred", shortURLForLog(tr.url), FmtBytes(float64(tr.transferred)))
 }
 
 func shortURLForLog(raw string) string {

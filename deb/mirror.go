@@ -6,13 +6,11 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
-	"encoding/xml"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -24,12 +22,12 @@ import (
 // Mirror downloads one APT repository (one mirror URL) for all requested
 // suites and components into destDir, preserving the upstream directory layout.
 func Mirror(mirrorURL, mirrorlistURL, metalinkURL, preferredMirror, destDir, repoName, gpgKeyURL string, suites, components, arches []string, workers int, dl *downloader.Client) error {
-	sources, err := resolveDEBSourceURLs(mirrorURL, mirrorlistURL, metalinkURL, preferredMirror, dl)
+	sources, err := downloader.ResolveSourceURLs(mirrorURL, mirrorlistURL, metalinkURL, preferredMirror, "DEB", dl)
 	if err != nil {
 		return fmt.Errorf("[deb] %s: resolve sources: %w", repoName, err)
 	}
-	ss := newSourceSet(sources)
-	mirrorURL = strings.TrimRight(ss.primary(), "/")
+	ss := downloader.NewSourceSet(sources)
+	mirrorURL = strings.TrimRight(ss.Primary(), "/")
 
 	log.Printf("[deb] %s  →  %s", mirrorURL, destDir)
 	if len(sources) > 1 {
@@ -82,7 +80,7 @@ func Mirror(mirrorURL, mirrorlistURL, metalinkURL, preferredMirror, destDir, rep
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
-				if err := downloadFileFromSources(dl, ss, j.relPath, j.dest, j.algo, j.checksum, prog); err != nil {
+				if err := downloader.DownloadFileFromSources(dl, ss, j.relPath, j.dest, j.algo, j.checksum, prog); err != nil {
 					errs <- fmt.Errorf("%s: %w", j.relPath, err)
 				}
 				if prog != nil {
@@ -123,18 +121,18 @@ type metaEntry struct {
 
 // mirrorSuite fetches the InRelease file for one suite, downloads all metadata
 // files listed in it, then collects all package URLs.
-func mirrorSuite(dl *downloader.Client, ss *sourceSet, destDir, repoName, suite string, components, arches []string) ([]pkgEntry, error) {
+func mirrorSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, repoName, suite string, components, arches []string) ([]pkgEntry, error) {
 	distDest := filepath.Join(destDir, "dists", suite)
 
 	// Try InRelease first, fall back to Release + Release.gpg.
 	inReleaseRel := "dists/" + suite + "/InRelease"
 	inReleaseDest := filepath.Join(distDest, "InRelease")
 
-	releaseData, _, err := fetchBytesFromSources(dl, ss, inReleaseRel)
+	releaseData, _, err := downloader.FetchBytesFromSources(dl, ss, inReleaseRel)
 	if err != nil {
 		// Try plain Release.
 		releaseRel := "dists/" + suite + "/Release"
-		releaseData, _, err = fetchBytesFromSources(dl, ss, releaseRel)
+		releaseData, _, err = downloader.FetchBytesFromSources(dl, ss, releaseRel)
 		if err != nil {
 			return nil, fmt.Errorf("fetch Release for suite %s: %w", suite, err)
 		}
@@ -142,7 +140,7 @@ func mirrorSuite(dl *downloader.Client, ss *sourceSet, destDir, repoName, suite 
 			if err := writeFile(filepath.Join(distDest, "Release"), releaseData); err != nil {
 				return nil, err
 			}
-			_ = downloadFileFromSources(dl, ss, "dists/"+suite+"/Release.gpg", filepath.Join(distDest, "Release.gpg"), "", "", nil)
+			_ = downloader.DownloadFileFromSources(dl, ss, "dists/"+suite+"/Release.gpg", filepath.Join(distDest, "Release.gpg"), "", "", nil)
 		}
 	} else {
 		if !dl.DryRun {
@@ -193,9 +191,9 @@ func mirrorSuite(dl *downloader.Client, ss *sourceSet, destDir, repoName, suite 
 						downloadRel = byHashRel
 					}
 				}
-				if err := downloadFileFromSources(dl, ss, downloadRel, fileDest, algo, sum, nil); err != nil {
+				if err := downloader.DownloadFileFromSources(dl, ss, downloadRel, fileDest, algo, sum, nil); err != nil {
 					if downloadRel != canonicalRel {
-						if err2 := downloadFileFromSources(dl, ss, canonicalRel, fileDest, algo, sum, nil); err2 != nil {
+						if err2 := downloader.DownloadFileFromSources(dl, ss, canonicalRel, fileDest, algo, sum, nil); err2 != nil {
 							// Some files may not exist on all mirrors; skip silently.
 							continue
 						}
@@ -220,7 +218,7 @@ func mirrorSuite(dl *downloader.Client, ss *sourceSet, destDir, repoName, suite 
 		var pkgs []debPkg
 		var parseErr error
 		if dl.DryRun {
-			data, _, err := fetchBytesFromSources(dl, ss, m.relPath)
+			data, _, err := downloader.FetchBytesFromSources(dl, ss, m.relPath)
 			if err != nil {
 				log.Printf("[deb] suite %s: fetch for parse %s: %v", suite, m.relPath, err)
 				continue
@@ -344,165 +342,6 @@ func byHashDirName(algo string) (string, bool) {
 	}
 }
 
-type sourceSet struct {
-	mu   sync.Mutex
-	urls []string
-}
-
-func newSourceSet(urls []string) *sourceSet {
-	return &sourceSet{urls: append([]string(nil), urls...)}
-}
-
-func (s *sourceSet) primary() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.urls) == 0 {
-		return ""
-	}
-	return s.urls[0]
-}
-
-func (s *sourceSet) ordered() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]string(nil), s.urls...)
-}
-
-func (s *sourceSet) markSuccess(baseURL string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	idx := -1
-	for i, u := range s.urls {
-		if u == baseURL {
-			idx = i
-			break
-		}
-	}
-	if idx <= 0 {
-		return
-	}
-	s.urls[0], s.urls[idx] = s.urls[idx], s.urls[0]
-}
-
-func downloadFileFromSources(dl *downloader.Client, ss *sourceSet, relPath, dest, algo, expected string, prog *downloader.Counter) error {
-	rel := strings.TrimLeft(relPath, "/")
-	ordered := ss.ordered()
-	var lastErr error
-	for _, base := range ordered {
-		url := strings.TrimRight(base, "/") + "/" + rel
-		if err := dl.DownloadFileP(url, dest, algo, expected, prog); err != nil {
-			lastErr = err
-			continue
-		}
-		ss.markSuccess(base)
-		return nil
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("no source URLs configured")
-	}
-	return lastErr
-}
-
-func fetchBytesFromSources(dl *downloader.Client, ss *sourceSet, relPath string) ([]byte, string, error) {
-	rel := strings.TrimLeft(relPath, "/")
-	ordered := ss.ordered()
-	var lastErr error
-	for _, base := range ordered {
-		url := strings.TrimRight(base, "/") + "/" + rel
-		data, err := dl.FetchBytes(url)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		ss.markSuccess(base)
-		return data, base, nil
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("no source URLs configured")
-	}
-	return nil, "", lastErr
-}
-
-func resolveDEBSourceURLs(mirrorURL, mirrorlistURL, metalinkURL, preferred string, dl *downloader.Client) ([]string, error) {
-	var sources []string
-	add := func(raw string) {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			return
-		}
-		raw = strings.TrimRight(raw, "/")
-		if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
-			return
-		}
-		for _, existing := range sources {
-			if existing == raw {
-				return
-			}
-		}
-		sources = append(sources, raw)
-	}
-
-	add(mirrorURL)
-
-	if mirrorlistURL != "" {
-		data, err := dl.FetchBytes(mirrorlistURL)
-		if err != nil {
-			return nil, fmt.Errorf("fetch mirrorlist: %w", err)
-		}
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			add(line)
-		}
-	}
-
-	if metalinkURL != "" {
-		data, err := dl.FetchBytes(metalinkURL)
-		if err != nil {
-			return nil, fmt.Errorf("fetch metalink: %w", err)
-		}
-		var ml struct {
-			URLs []struct {
-				Protocol string `xml:"protocol,attr"`
-				Value    string `xml:",chardata"`
-			} `xml:"files>file>resources>url"`
-		}
-		if err := xml.Unmarshal(data, &ml); err != nil {
-			return nil, fmt.Errorf("parse metalink: %w", err)
-		}
-		for _, u := range ml.URLs {
-			p := strings.ToLower(strings.TrimSpace(u.Protocol))
-			if p != "" && p != "http" && p != "https" {
-				continue
-			}
-			add(u.Value)
-		}
-	}
-
-	if len(sources) == 0 {
-		return nil, fmt.Errorf("no DEB source URL configured (set mirror, mirrorlist, or metalink)")
-	}
-
-	if preferred != "" {
-		preferred = strings.ToLower(strings.TrimSpace(preferred))
-		slices.SortStableFunc(sources, func(a, b string) int {
-			aa := strings.Contains(strings.ToLower(a), preferred)
-			bb := strings.Contains(strings.ToLower(b), preferred)
-			switch {
-			case aa && !bb:
-				return -1
-			case !aa && bb:
-				return 1
-			default:
-				return 0
-			}
-		})
-	}
-
-	return sources, nil
-}
 
 func algoPriority(algo string) int {
 	switch algo {
