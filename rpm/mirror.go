@@ -18,7 +18,12 @@ import (
 	"repomirror/downloader"
 	"repomirror/gpg"
 
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // register sqlite driver
+)
+
+const (
+	primaryMetaXML    = "xml"
+	primaryMetaSQLite = "sqlite"
 )
 
 // ---------- XML structs for repomd.xml ----------
@@ -65,7 +70,7 @@ type pkgLocation struct {
 // Mirror downloads a YUM/DNF repository rooted at baseURL into destDir.
 // It mirrors the repodata directory exactly and all referenced RPM packages,
 // preserving the upstream directory layout.
-func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadata, destDir, repoName, gpgKeyURL string, workers int, dl *downloader.Client) error {
+func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadata, destDir, repoName, gpgKeyURL string, workers int, dl *downloader.Client) error { //nolint:gocyclo
 	sources, err := downloader.ResolveSourceURLs(baseURL, mirrorlistURL, metalinkURL, preferredMirror, "RPM", dl)
 	if err != nil {
 		return fmt.Errorf("[rpm] %s: resolve sources: %w", repoName, err)
@@ -82,13 +87,13 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 
 	// Fetch and import the GPG key.
 	keysDir := filepath.Join(destDir, "gpg-keys")
-	if err := gpg.FetchAndImport(gpgKeyURL, keysDir, dl); err != nil {
-		log.Printf("[rpm] %s: GPG key warning: %v", repoName, err)
+	if gpgErr := gpg.FetchAndImport(gpgKeyURL, keysDir, dl); gpgErr != nil {
+		log.Printf("[rpm] %s: GPG key warning: %v", repoName, gpgErr)
 	}
 
 	// Fetch repomd.xml (always into memory so dry-run can parse it).
 	repomdRel := "repodata/repomd.xml"
-	repomdURL := baseURL + "/" + repomdRel
+	var repomdURL string
 	repomdDest := filepath.Join(destDir, "repodata", "repomd.xml")
 	log.Printf("[rpm] %s: fetching repomd.xml", repoName)
 	repomdData, usedBase, err := downloader.FetchBytesFromSources(dl, ss, repomdRel)
@@ -104,7 +109,7 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 			return fmt.Errorf("[rpm] %s: save repomd.xml: %w", repoName, err)
 		}
 		tmpRepomd := repomdDest + ".repomirror.tmp"
-		if err := os.WriteFile(tmpRepomd, repomdData, 0o644); err != nil {
+		if err := os.WriteFile(tmpRepomd, repomdData, 0o644); err != nil { //nolint:gosec
 			_ = os.Remove(tmpRepomd) //nolint:errcheck
 			return fmt.Errorf("[rpm] %s: save repomd.xml: %w", repoName, err)
 		}
@@ -170,7 +175,7 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 	if reason != "" {
 		log.Printf("[rpm] %s: primary metadata mode auto -> %s (%s)", repoName, mode, reason)
 	}
-	useSQLite := primaryDBRel != "" && mode != "xml"
+	useSQLite := primaryDBRel != "" && mode != primaryMetaXML
 	parseSource := "primary.xml"
 	if useSQLite {
 		parseSource = "primary.sqlite"
@@ -407,8 +412,8 @@ func queryPrimarySQLite(path, repoName string) ([]rpmPkg, error) {
 	defer db.Close()
 
 	var total int64
-	if err := db.QueryRow("SELECT COUNT(*) FROM packages").Scan(&total); err != nil {
-		return nil, err
+	if countErr := db.QueryRow("SELECT COUNT(*) FROM packages").Scan(&total); countErr != nil {
+		return nil, countErr
 	}
 
 	progress := newParseItemProgress(repoName, "parsing primary metadata", total)
@@ -616,15 +621,15 @@ func resolvePrimaryMetadataMode(rawMode, destDir string, hasPrimaryDB bool) (str
 		mode = "auto"
 	}
 
-	if mode == "sqlite" && !hasPrimaryDB {
-		return "xml", "primary_db unavailable"
+	if mode == primaryMetaSQLite && !hasPrimaryDB {
+		return primaryMetaXML, "primary_db unavailable"
 	}
-	if mode == "xml" || mode == "sqlite" {
+	if mode == "xml" || mode == primaryMetaSQLite {
 		return mode, ""
 	}
 
 	if !hasPrimaryDB {
-		return "xml", "primary_db unavailable"
+		return primaryMetaXML, "primary_db unavailable"
 	}
 
 	fsType, ok := filesystemTypeForPath(destDir)
@@ -632,11 +637,11 @@ func resolvePrimaryMetadataMode(rawMode, destDir string, hasPrimaryDB bool) (str
 		fs := strings.ToLower(fsType)
 		switch fs {
 		case "drvfs", "fuseblk", "ntfs", "ntfs3", "exfat", "vfat", "msdos", "fuse", "9p", "v9fs":
-			return "xml", "filesystem=" + fsType
+			return primaryMetaXML, "filesystem=" + fsType
 		}
 	}
 
-	return "sqlite", ""
+	return primaryMetaSQLite, ""
 }
 
 func filesystemTypeForPath(target string) (string, bool) {

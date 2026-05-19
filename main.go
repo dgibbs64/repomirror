@@ -40,7 +40,7 @@ func main() { //nolint:gocyclo
 	}
 
 	if *genConfig {
-		if err := os.WriteFile(*cfgPath, []byte(config.ExampleConfig()), 0o644); err != nil { //nolint:gosec
+		if err := os.WriteFile(*cfgPath, []byte(config.ExampleConfig()), 0o644); err != nil { //nolint:gosec,govet
 			log.Fatalf("write example config: %v", err)
 		}
 		fmt.Printf("Example config written to %s\n", *cfgPath)
@@ -171,17 +171,17 @@ func lockOutputTree(lockDir string) (func(), error) {
 		return nil, fmt.Errorf("another repomirror process is already running")
 	}
 	if err := f.Truncate(0); err != nil {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck,gosec
 		_ = f.Close()
 		return nil, fmt.Errorf("truncate lock file: %w", err)
 	}
 	if _, err := fmt.Fprintf(f, "pid=%d\n", os.Getpid()); err != nil {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck,gosec
 		_ = f.Close()
 		return nil, fmt.Errorf("write lock file: %w", err)
 	}
 	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck,gosec
 		_ = f.Close()
 		_ = os.Remove(lockPath)
 	}, nil

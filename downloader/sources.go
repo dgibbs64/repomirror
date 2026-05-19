@@ -99,7 +99,7 @@ func FetchBytesFromSources(dl *Client, ss *SourceSet, relPath string) ([]byte, s
 // ResolveSourceURLs builds an ordered list of base URLs from an explicit URL,
 // mirrorlist, and metalink. repoType is used only in the error message
 // (e.g. "RPM" or "DEB").
-func ResolveSourceURLs(primaryURL, mirrorlistURL, metalinkURL, preferred, repoType string, dl *Client) ([]string, error) {
+func ResolveSourceURLs(primaryURL, mirrorlistURL, metalinkURL, preferred, repoType string, dl *Client) ([]string, error) { //nolint:gocyclo
 	var sources []string
 	add := func(raw string) {
 		raw = strings.TrimSpace(raw)

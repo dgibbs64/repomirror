@@ -343,15 +343,15 @@ func stripANSI(s string) string {
 	return ansiRE.ReplaceAllString(s, "")
 }
 
-func trimVisual(s string, max int) string {
-	if max <= 1 {
+func trimVisual(s string, maxWidth int) string {
+	if maxWidth <= 1 {
 		return s
 	}
 	r := []rune(s)
-	if len(r) <= max {
+	if len(r) <= maxWidth {
 		return s
 	}
-	return string(r[:max-1]) + "…"
+	return string(r[:maxWidth-1]) + "…"
 }
 
 // FmtBytes formats a byte count as a human-readable string.

@@ -2,8 +2,8 @@
 package downloader
 
 import (
-	"crypto/md5"
-	"crypto/sha1"
+	"crypto/md5"  //nolint:gosec
+	"crypto/sha1" //nolint:gosec
 	"crypto/sha256"
 	"crypto/sha512"
 	"database/sql"
@@ -23,7 +23,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // register sqlite driver
 )
 
 const transferActivityInterval = 20 * time.Second
@@ -162,7 +162,7 @@ func (c *Client) DownloadFileP(url, destPath, algo, expected string, prog *Count
 	return fmt.Errorf("downloading %s: %w", url, lastErr)
 }
 
-func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counter) error {
+func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counter) error { //nolint:gocyclo
 	writePath := destPath
 	if useTempWritePath(destPath) {
 		writePath = destPath + ".repomirror.part"
@@ -210,24 +210,23 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	case http.StatusRequestedRangeNotSatisfiable:
 		// File is already complete on disk. Verify checksum if we have one.
 		if expected != "" {
-			ok, err := checksumMatchP(writePath, algo, expected, prog)
-			if err != nil {
-				return err
+			ok, checkErr := checksumMatchP(writePath, algo, expected, prog)
+			if checkErr != nil {
+				return checkErr
 			}
 			if !ok {
 				// Corrupt; delete and retry from scratch.
-				os.Remove(writePath)
-				startByte = 0
+				os.Remove(writePath) //nolint:errcheck
 				return c.downloadOnce(url, destPath, algo, expected, prog)
 			}
 		}
 		return nil
 	default:
-		err := fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
+		httpErr := fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-			return permanentError{err}
+			return permanentError{httpErr}
 		}
-		return err
+		return httpErr
 	}
 
 	flag := os.O_CREATE | os.O_WRONLY
@@ -425,7 +424,7 @@ func checksumMatchP(path, algo, expected string, prog *Counter) (bool, error) {
 	}
 
 	buf := checksumCopyBufPool.Get().([]byte)
-	defer checksumCopyBufPool.Put(buf)
+	defer checksumCopyBufPool.Put(buf) //nolint:staticcheck
 
 	if _, err := io.CopyBuffer(h, reader, buf); err != nil {
 		return false, err
@@ -561,10 +560,6 @@ func (tr *transferReader) report(now time.Time) {
 		return
 	}
 
-	elapsed := now.Sub(tr.lastReport)
-	if elapsed <= 0 {
-		elapsed = time.Second
-	}
 	if tr.total > 0 {
 		pct := float64(tr.transferred) / float64(tr.total) * 100
 		log.Printf("[dl] active %s: %s/%s (%.1f%%)", shortURLForLog(tr.url), FmtBytes(float64(tr.transferred)), FmtBytes(float64(tr.total)), pct)
