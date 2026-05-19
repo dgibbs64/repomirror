@@ -1,0 +1,85 @@
+name: Dry-run Example Repos
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *' # nightly at 03:00 UTC
+  push:
+    branches:
+      - master
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'examples/**'
+      - '.github/workflows/action-dry-run.yml'
+  pull_request:
+    paths:
+      - 'examples/**'
+      - '.github/workflows/action-dry-run.yml'
+
+concurrency:
+  group: dry-run-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rpm:
+    name: RPM repos dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: CGO_ENABLED=0 go build -o repomirror .
+
+      - name: Validate RPM example config
+        run: |
+          printf 'output_dir: /tmp/mirror\nworkers: 4\n\n' \
+            | cat - examples/rpm-repos.yaml > /tmp/ci-rpm.yaml
+          ./repomirror --config /tmp/ci-rpm.yaml --validate
+
+      - name: Dry-run RPM repos
+        run: ./repomirror --config /tmp/ci-rpm.yaml --dry-run
+
+  deb:
+    name: DEB repos dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: CGO_ENABLED=0 go build -o repomirror .
+
+      - name: Validate DEB example config
+        run: |
+          printf 'output_dir: /tmp/mirror\nworkers: 4\n\n' \
+            | cat - examples/deb-repos.yaml > /tmp/ci-deb.yaml
+          ./repomirror --config /tmp/ci-deb.yaml --validate
+
+      - name: Dry-run DEB repos
+        run: ./repomirror --config /tmp/ci-deb.yaml --dry-run
