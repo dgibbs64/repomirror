@@ -289,7 +289,6 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 	return nil
 }
 
-
 // parsePrimary reads and parses a possibly gzip-compressed primary.xml file.
 func parsePrimary(path, repoName string) ([]rpmPkg, error) {
 	r, cleanup, err := openPossiblyCompressed(path)
@@ -698,4 +697,3 @@ func decodeMountEscapes(s string) string {
 	)
 	return replacer.Replace(s)
 }
-

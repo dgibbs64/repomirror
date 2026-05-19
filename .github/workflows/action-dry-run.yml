@@ -3,20 +3,20 @@ name: Dry-run Example Repos
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 3 * * *' # nightly at 03:00 UTC
+    - cron: "0 3 * * *" # nightly at 03:00 UTC
   push:
     branches:
       - master
     paths:
-      - '**/*.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'examples/**'
-      - '.github/workflows/action-dry-run.yml'
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "examples/**"
+      - ".github/workflows/action-dry-run.yml"
   pull_request:
     paths:
-      - 'examples/**'
-      - '.github/workflows/action-dry-run.yml'
+      - "examples/**"
+      - ".github/workflows/action-dry-run.yml"
 
 concurrency:
   group: dry-run-${{ github.ref }}

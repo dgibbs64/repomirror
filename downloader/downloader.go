@@ -33,6 +33,7 @@ type permanentError struct{ err error }
 
 func (e permanentError) Error() string { return e.err.Error() }
 func (e permanentError) Unwrap() error { return e.err }
+
 const checksumCopyBufferSize = 1024 * 1024
 
 var checksumCopyBufPool = sync.Pool{

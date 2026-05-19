@@ -435,7 +435,6 @@ func byHashDirName(algo string) (string, bool) {
 	}
 }
 
-
 func algoPriority(algo string) int {
 	switch algo {
 	case "sha512":
