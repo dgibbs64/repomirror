@@ -19,6 +19,13 @@ import (
 	"repomirror/gpg"
 )
 
+const (
+	algoMD5    = "md5"
+	algoSHA1   = "sha1"
+	algoSHA256 = "sha256"
+	algoSHA512 = "sha512"
+)
+
 // Mirror downloads one APT repository (one mirror URL) for all requested
 // suites and components into destDir, preserving the upstream directory layout.
 func Mirror(mirrorURL, mirrorlistURL, metalinkURL, preferredMirror, destDir, repoName, gpgKeyURL string, suites, components, arches []string, workers int, dl *downloader.Client) error {
@@ -146,11 +153,9 @@ func mirrorSuite(dl *downloader.Client, ss *downloader.SourceSet, destDir, repoN
 			}
 			_ = downloader.DownloadFileFromSources(dl, ss, "dists/"+suite+"/Release.gpg", filepath.Join(distDest, "Release.gpg"), "", "", nil)
 		}
-	} else {
-		if !dl.DryRun {
-			if err := writeFile(inReleaseDest, releaseData); err != nil {
-				return nil, err
-			}
+	} else if !dl.DryRun {
+		if err := writeFile(inReleaseDest, releaseData); err != nil {
+			return nil, err
 		}
 	}
 
@@ -371,16 +376,16 @@ func parseReleaseMetadata(data []byte) releaseMetadata {
 		line := scanner.Text()
 		switch strings.TrimRight(line, " ") {
 		case "MD5Sum:":
-			currentAlgo = "md5"
+			currentAlgo = algoMD5
 			continue
 		case "SHA1:":
-			currentAlgo = "sha1"
+			currentAlgo = algoSHA1
 			continue
 		case "SHA256:":
-			currentAlgo = "sha256"
+			currentAlgo = algoSHA256
 			continue
 		case "SHA512:":
-			currentAlgo = "sha512"
+			currentAlgo = algoSHA512
 			continue
 		}
 		if strings.EqualFold(strings.TrimSpace(line), "Acquire-By-Hash: yes") {
@@ -422,13 +427,13 @@ func buildByHashRelativePath(suite, relativePath, algo, sum string) (string, boo
 
 func byHashDirName(algo string) (string, bool) {
 	switch strings.ToLower(algo) {
-	case "sha512":
+	case algoSHA512:
 		return "SHA512", true
-	case "sha256":
+	case algoSHA256:
 		return "SHA256", true
-	case "sha1":
+	case algoSHA1:
 		return "SHA1", true
-	case "md5":
+	case algoMD5:
 		return "MD5Sum", true
 	default:
 		return "", false
@@ -437,13 +442,13 @@ func byHashDirName(algo string) (string, bool) {
 
 func algoPriority(algo string) int {
 	switch algo {
-	case "sha512":
+	case algoSHA512:
 		return 4
-	case "sha256":
+	case algoSHA256:
 		return 3
-	case "sha1":
+	case algoSHA1:
 		return 2
-	case "md5":
+	case algoMD5:
 		return 1
 	}
 	return 0
@@ -556,16 +561,16 @@ func scanPackages(r io.Reader, arches []string) []debPkg {
 			currentArch = val
 		}
 		// Prefer SHA256 > SHA1 > MD5.
-		if current.algo != "sha256" {
+		if current.algo != algoSHA256 {
 			if val, ok := fieldValue(line, "SHA256"); ok {
-				current.algo = "sha256"
+				current.algo = algoSHA256
 				current.sum = val
-			} else if current.algo != "sha1" {
+			} else if current.algo != algoSHA1 {
 				if val, ok := fieldValue(line, "SHA1"); ok {
-					current.algo = "sha1"
+					current.algo = algoSHA1
 					current.sum = val
 				} else if val, ok := fieldValue(line, "MD5sum"); ok {
-					current.algo = "md5"
+					current.algo = algoMD5
 					current.sum = val
 				}
 			}

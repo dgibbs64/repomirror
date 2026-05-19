@@ -1,4 +1,13 @@
-linters-settings:
-  errcheck:
-    # Allow _ = fn() for intentionally-ignored cleanup errors (unlock, cache writes, etc.)
-    check-blank: false
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Allow _ = fn() for intentionally-ignored cleanup errors (unlock, cache writes, etc.)
+      check-blank: false
+    gocyclo:
+      min-complexity: 30
+    gosec:
+      excludes:
+        - G306 # WriteFile 0644 is correct for publicly readable config/data files
+        - G115 # uintptr->int conversion is safe on 64-bit Linux for syscall use

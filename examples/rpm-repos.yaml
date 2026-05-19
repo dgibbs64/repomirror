@@ -356,8 +356,8 @@ rpm_repos:
   # ---------------------------------------------------------------------------
   - name: influxdb
     enable: true
-    path: influxdb/rhel/x86_64/stable
-    base_url: https://repos.influxdata.com/rhel/x86_64/stable/
+    path: influxdb/rhel/9/x86_64/stable
+    base_url: https://repos.influxdata.com/rhel/9/x86_64/stable/
     gpg_key: https://repos.influxdata.com/influxdata-archive_compat.key
 
   # ---------------------------------------------------------------------------

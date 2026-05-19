@@ -73,7 +73,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("lock output dir: %v", err)
 	}
-	defer unlock()
 
 	dl := downloader.New()
 	if *dryRun {
@@ -145,6 +144,7 @@ func main() {
 	} else {
 		log.Println("Mirror completed with errors (see above).")
 	}
+	unlock()
 	os.Exit(exitCode)
 }
 
