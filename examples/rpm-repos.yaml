@@ -414,3 +414,18 @@ rpm_repos:
     path: kubernetes/1.31/rpm/x86_64
     base_url: https://pkgs.k8s.io/core:/stable:/v1.31/rpm/x86_64/
     gpg_key: https://pkgs.k8s.io/core:/stable:/v1.31/rpm/repodata/repomd.xml.key
+
+  # ---------------------------------------------------------------------------
+  # osquery
+  # ---------------------------------------------------------------------------
+  - name: osquery-rpm-x86_64
+    enable: true
+    path: osquery/rpm/x86_64
+    base_url: https://pkg.osquerypackages.com/rpm/x86_64/
+    gpg_key: https://pkg.osquerypackages.com/rpm/GPG
+
+  - name: osquery-rpm-aarch64
+    enable: true
+    path: osquery/rpm/aarch64
+    base_url: https://pkg.osquerypackages.com/rpm/aarch64/
+    gpg_key: https://pkg.osquerypackages.com/rpm/GPG

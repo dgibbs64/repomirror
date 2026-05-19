@@ -98,7 +98,19 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 	}
 	repomdURL = strings.TrimRight(usedBase, "/") + "/" + repomdRel
 	if !dl.DryRun {
-		if err := downloadFileFromSources(dl, ss, repomdRel, repomdDest, "", "", nil); err != nil {
+		// Write the fresh repomd.xml atomically — we already have the bytes in
+		// memory. Using a direct write (rather than downloadFileFromSources)
+		// ensures the file is updated on every run, not just the first.
+		if err := os.MkdirAll(filepath.Dir(repomdDest), 0o755); err != nil {
+			return fmt.Errorf("[rpm] %s: save repomd.xml: %w", repoName, err)
+		}
+		tmpRepomd := repomdDest + ".repomirror.tmp"
+		if err := os.WriteFile(tmpRepomd, repomdData, 0o644); err != nil {
+			_ = os.Remove(tmpRepomd)
+			return fmt.Errorf("[rpm] %s: save repomd.xml: %w", repoName, err)
+		}
+		if err := os.Rename(tmpRepomd, repomdDest); err != nil {
+			_ = os.Remove(tmpRepomd)
 			return fmt.Errorf("[rpm] %s: save repomd.xml: %w", repoName, err)
 		}
 	} else {
@@ -106,13 +118,21 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 	}
 
 	// Download repomd.xml.asc / repomd.xml.key (signature) if present.
+	// Fetch fresh each run so the sig always matches the current repomd.xml.
 	for _, sigSuffix := range []string{".asc", ".key", ".sig"} {
 		sigRel := repomdRel + sigSuffix
 		sigURL := repomdURL + sigSuffix
 		sigDest := repomdDest + sigSuffix
-		if err := downloadFileFromSources(dl, ss, sigRel, sigDest, "", "", nil); err != nil && dl.DryRun {
+		if dl.DryRun {
 			log.Printf("[dry-run] would download: %s", sigURL)
+			continue
 		}
+		sigData, _, sigErr := fetchBytesFromSources(dl, ss, sigRel)
+		if sigErr != nil {
+			_ = os.Remove(sigDest)
+			continue
+		}
+		_ = os.WriteFile(sigDest, sigData, 0o644)
 	}
 	var rmd repoMD
 	if err := xml.Unmarshal(repomdData, &rmd); err != nil {
