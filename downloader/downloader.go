@@ -553,7 +553,7 @@ func (tr *transferReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (tr *transferReader) report(now time.Time) {
+func (tr *transferReader) report(_ time.Time) {
 	// When a repo counter is active, progress is already shown on the live line.
 	// Extra log lines here can interleave and make terminal output look messy.
 	if tr.c != nil {
