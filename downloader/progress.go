@@ -150,6 +150,9 @@ func (c *Counter) ClearActiveProgress(name string) {
 // Done records one package as complete (downloaded or already cached).
 func (c *Counter) Done() { c.done.Add(1) }
 
+// Bytes returns the number of bytes transferred over the network so far.
+func (c *Counter) Bytes() int64 { return c.bytes.Load() }
+
 // Log overwrites the current terminal line with a live progress update.
 // It writes directly to stderr with \r so no newline is emitted.
 func (c *Counter) Log() {
