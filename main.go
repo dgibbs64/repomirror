@@ -6,12 +6,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"repomirror/clientconfigs"
 	"repomirror/config"
 	"repomirror/deb"
 	"repomirror/downloader"
+	prunepkg "repomirror/prune"
 	"repomirror/rpm"
 )
 
@@ -27,7 +29,7 @@ func main() { //nolint:gocyclo
 	defaultCfgPath := defaultConfigPath(binDir)
 
 	// Flags
-	cfgPath := flag.String("config", defaultCfgPath, "path to mirrors.yaml or mirrors.yml config file")
+	cfgPath := flag.String("config", defaultCfgPath, "path to mirrors.yml or mirrors.yaml config file")
 	genConfig := flag.Bool("init", false, "write an example config file to the config path and exit")
 	validateConfig := flag.Bool("validate", false, "validate config file and exit")
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -69,65 +71,95 @@ func main() { //nolint:gocyclo
 		log.Fatalf("create output dir: %v", mkdirErr)
 	}
 
-	unlock, err := lockOutputTree(binDir)
+	unlock, err := lockOutputTree(outputDir)
 	if err != nil {
 		log.Fatalf("lock output dir: %v", err)
 	}
 
 	dl := downloader.New()
+	dl.UserAgent = cfg.UserAgent
+	if dl.UserAgent == "" {
+		dl.UserAgent = "repomirror/" + version
+	}
+	if cfg.RateLimit > 0 {
+		dl.SetRateLimit(int64(cfg.RateLimit))
+		log.Printf("Download rate limited to %s/s", downloader.FmtBytes(float64(cfg.RateLimit)))
+	}
 	if *dryRun {
 		dl.DryRun = true
-		log.Println("[dry-run] mode enabled — directories will be created, no files will be downloaded")
+		log.Println("[dry-run] mode enabled, no files will be downloaded or removed")
+	}
+	verify := cfg.SignaturesEnabled()
+	if !verify {
+		log.Println("WARNING: verify_signatures is false, repository signatures are only checked for repos that enable it")
 	}
 
 	var exitCode int
+	paths := newPathTracker()
 
 	// Mirror DEB repos first, sequentially. Each repo uses cfg.Workers
 	// concurrent connections internally.
 	for _, repo := range cfg.DEBRepos {
+		destDir := repoDestDir(outputDir, repo.Path, repo.Name)
 		if !repo.Enabled() {
-			name := repo.Name
-			if name == "" {
-				name = repo.Path
-			}
-			log.Printf("[deb] %s: skipped (enable=false)", name)
+			log.Printf("[deb] %s: skipped (enable=false)", displayName(repo.Name, repo.Path))
+			paths.disabled(destDir)
 			continue
 		}
-		path := repo.Path
-		if path == "" {
-			path = repo.Name
-		}
-		destDir := filepath.Join(outputDir, filepath.FromSlash(path))
-		if err := deb.Mirror(repo.Mirror, repo.Mirrorlist, repo.Metalink, repo.PreferredMirror, destDir, repo.Name, repo.GPGKey, repo.Suites, repo.Components, repo.Arches, int(cfg.Workers), dl); err != nil {
-			log.Printf("ERROR: %s: %v", path, err)
+		res, err := deb.Mirror(deb.Options{
+			Name:             repo.Name,
+			MirrorURL:        repo.Mirror,
+			Mirrorlist:       repo.Mirrorlist,
+			Metalink:         repo.Metalink,
+			PreferredMirror:  repo.PreferredMirror,
+			GPGKey:           repo.GPGKey,
+			DestDir:          destDir,
+			Suites:           repo.Suites,
+			Components:       repo.Components,
+			Arches:           repo.Arches,
+			Workers:          int(cfg.Workers),
+			VerifySignatures: repo.Verify(verify),
+		}, dl)
+		if err != nil {
+			log.Printf("ERROR: %s: %v", displayName(repo.Name, repo.Path), err)
 			exitCode = 1
 		}
+		paths.record(destDir, res.Referenced, err == nil && res.Complete)
 	}
 
 	// Then mirror RPM repos, sequentially.
 	for _, repo := range cfg.RPMRepos {
+		destDir := repoDestDir(outputDir, repo.Path, repo.Name)
 		if !repo.Enabled() {
-			name := repo.Name
-			if name == "" {
-				name = repo.Path
-			}
-			log.Printf("[rpm] %s: skipped (enable=false)", name)
+			log.Printf("[rpm] %s: skipped (enable=false)", displayName(repo.Name, repo.Path))
+			paths.disabled(destDir)
 			continue
 		}
-		path := repo.Path
-		if path == "" {
-			path = repo.Name
-		}
-		destDir := filepath.Join(outputDir, filepath.FromSlash(path))
-		if err := rpm.Mirror(repo.BaseURL, repo.Mirrorlist, repo.Metalink, repo.PreferredMirror, cfg.RPMPrimaryMetadata, destDir, repo.Name, repo.GPGKey, int(cfg.Workers), dl); err != nil {
-			log.Printf("ERROR: %s: %v", path, err)
+		res, err := rpm.Mirror(rpm.Options{
+			Name:             repo.Name,
+			BaseURL:          repo.BaseURL,
+			Mirrorlist:       repo.Mirrorlist,
+			Metalink:         repo.Metalink,
+			PreferredMirror:  repo.PreferredMirror,
+			PrimaryMetadata:  cfg.RPMPrimaryMetadata,
+			GPGKey:           repo.GPGKey,
+			DestDir:          destDir,
+			Arches:           repo.Arches,
+			Workers:          int(cfg.Workers),
+			VerifySignatures: repo.Verify(verify),
+		}, dl)
+		if err != nil {
+			log.Printf("ERROR: %s: %v", displayName(repo.Name, repo.Path), err)
 			exitCode = 1
 		}
+		paths.record(destDir, res.Referenced, err == nil && res.Complete)
 	}
+
+	cleanMirrorPaths(paths, outputDir, cfg.Prune, *dryRun)
 
 	// Generate client config files (yum .repo / apt .list) pointing at the mirror.
 	if cfg.MirrorURL != "" {
-		if err := clientconfigs.Generate(cfg, outputDir, cfg.MirrorURL); err != nil {
+		if err := clientconfigs.Generate(cfg, outputDir, cfg.MirrorURL, !*dryRun); err != nil {
 			log.Printf("ERROR: generating client configs: %v", err)
 			exitCode = 1
 		} else {
@@ -148,16 +180,122 @@ func main() { //nolint:gocyclo
 	os.Exit(exitCode)
 }
 
-func defaultConfigPath(binDir string) string {
-	yamlPath := filepath.Join(binDir, "mirrors.yaml")
-	ymlPath := filepath.Join(binDir, "mirrors.yml")
-	if _, err := os.Stat(yamlPath); err == nil {
-		return yamlPath
+func repoDestDir(outputDir, path, name string) string {
+	if path == "" {
+		path = name
 	}
+	return filepath.Join(outputDir, filepath.FromSlash(path))
+}
+
+func displayName(name, path string) string {
+	if name != "" {
+		return name
+	}
+	return path
+}
+
+type pathState struct {
+	keep        map[string]bool
+	complete    bool
+	hasDisabled bool
+}
+
+type pathTracker struct {
+	order  []string
+	states map[string]*pathState
+}
+
+func newPathTracker() *pathTracker {
+	return &pathTracker{states: map[string]*pathState{}}
+}
+
+func (t *pathTracker) get(dir string) *pathState {
+	dir = filepath.Clean(dir)
+	s, ok := t.states[dir]
+	if !ok {
+		s = &pathState{keep: map[string]bool{}, complete: true}
+		t.states[dir] = s
+		t.order = append(t.order, dir)
+	}
+	return s
+}
+
+func (t *pathTracker) disabled(dir string) { t.get(dir).hasDisabled = true }
+
+func (t *pathTracker) record(dir string, keep map[string]bool, ok bool) {
+	s := t.get(dir)
+	for p := range keep {
+		s.keep[filepath.Clean(p)] = true
+	}
+	if !ok {
+		s.complete = false
+	}
+}
+
+// cleanMirrorPaths removes leftover temporary files and, when prune is set,
+// files upstream no longer lists. A path is only cleaned when every repo
+// entry that writes to it is enabled and finished without errors.
+func cleanMirrorPaths(t *pathTracker, outputDir string, prune bool, dryRun bool) {
+	outputDir = filepath.Clean(outputDir)
+	for _, dir := range t.order {
+		s := t.states[dir]
+		label := "[prune] " + dir + ":"
+		switch {
+		case s.hasDisabled:
+			log.Printf("%s skipped, a repo using this path has enable=false", label)
+			continue
+		case !s.complete:
+			log.Printf("%s skipped, the sync for this path had errors", label)
+			continue
+		case dir == outputDir || dir == string(filepath.Separator):
+			log.Printf("%s skipped, a repo path must be a subdirectory of output_dir", label)
+			continue
+		case prune && len(s.keep) == 0:
+			log.Printf("%s skipped, nothing was referenced", label)
+			continue
+		}
+		var nested []string
+		for _, other := range t.order {
+			if other != dir && strings.HasPrefix(other, dir+string(filepath.Separator)) {
+				nested = append(nested, other)
+			}
+		}
+		st, err := prunepkg.Run(dir, prunepkg.Options{
+			Keep:     s.keep,
+			Skip:     nested,
+			TempOnly: !prune,
+			DryRun:   dryRun,
+			Label:    label,
+		})
+		if err != nil {
+			log.Printf("%s ERROR: %v", label, err)
+			continue
+		}
+		if st.Files == 0 {
+			continue
+		}
+		what := "stale temporary file(s)"
+		if prune {
+			what = "unreferenced file(s)"
+		}
+		verb := "removed"
+		if dryRun {
+			verb = "would remove"
+		}
+		log.Printf("%s %s %d %s (%s)", label, verb, st.Files, what, downloader.FmtBytes(float64(st.Bytes)))
+	}
+}
+
+func defaultConfigPath(binDir string) string {
+	ymlPath := filepath.Join(binDir, "mirrors.yml")
+	yamlPath := filepath.Join(binDir, "mirrors.yaml")
 	if _, err := os.Stat(ymlPath); err == nil {
 		return ymlPath
 	}
-	return yamlPath
+	if _, err := os.Stat(yamlPath); err == nil {
+		return yamlPath
+	}
+	return ymlPath
 }
 
 func lockOutputTree(lockDir string) (func(), error) {

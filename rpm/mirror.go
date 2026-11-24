@@ -57,6 +57,7 @@ type primaryMD struct {
 }
 
 type rpmPkg struct {
+	Arch     string      `xml:"arch"`
 	Location pkgLocation `xml:"location"`
 	Checksum checksum    `xml:"checksum"`
 }
@@ -67,207 +68,234 @@ type pkgLocation struct {
 
 // ---------- Mirror ----------
 
-// Mirror downloads a YUM/DNF repository rooted at baseURL into destDir.
-// It mirrors the repodata directory exactly and all referenced RPM packages,
-// preserving the upstream directory layout.
-func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadata, destDir, repoName, gpgKeyURL string, workers int, dl *downloader.Client) error { //nolint:gocyclo
-	sources, err := downloader.ResolveSourceURLs(baseURL, mirrorlistURL, metalinkURL, preferredMirror, "RPM", dl)
+// Options describes one YUM/DNF repository entry from the config.
+type Options struct {
+	Name             string
+	BaseURL          string
+	Mirrorlist       string
+	Metalink         string
+	PreferredMirror  string
+	PrimaryMetadata  string
+	GPGKey           string
+	DestDir          string
+	Arches           []string
+	Workers          int
+	VerifySignatures bool
+}
+
+// Result lists the files a run wants to keep under DestDir. Complete is true
+// only when all metadata and packages were mirrored without errors.
+type Result struct {
+	Referenced map[string]bool
+	Complete   bool
+}
+
+var repomdSigSuffixes = []string{".asc", ".key", ".sig"}
+
+// Mirror downloads a YUM/DNF repository into o.DestDir, preserving the
+// upstream layout. repomd.xml is written after all metadata and packages are
+// in place.
+func Mirror(o Options, dl *downloader.Client) (*Result, error) { //nolint:gocyclo
+	res := &Result{Referenced: map[string]bool{}}
+	repoName := o.Name
+	sources, err := downloader.ResolveSourceURLs(o.BaseURL, o.Mirrorlist, o.Metalink, o.PreferredMirror, "RPM", dl)
 	if err != nil {
-		return fmt.Errorf("[rpm] %s: resolve sources: %w", repoName, err)
+		return res, fmt.Errorf("[rpm] %s: resolve sources: %w", repoName, err)
 	}
 	ss := downloader.NewSourceSet(sources)
+	destDir := o.DestDir
 
-	baseURL = strings.TrimRight(ss.Primary(), "/")
-
-	log.Printf("[rpm] %s  →  %s", baseURL, destDir)
-	log.Printf("[rpm] %s: preparing metadata (workers=%d)", repoName, workers)
+	log.Printf("[rpm] %s  →  %s", strings.TrimRight(ss.Primary(), "/"), destDir)
+	log.Printf("[rpm] %s: preparing metadata (workers=%d)", repoName, o.Workers)
 	if len(sources) > 1 {
 		log.Printf("[rpm] %s: source failover enabled (%d sources)", repoName, len(sources))
 	}
 
-	// Fetch and import the GPG key.
-	keysDir := filepath.Join(destDir, "gpg-keys")
-	if gpgErr := gpg.FetchAndImport(gpgKeyURL, keysDir, dl); gpgErr != nil {
-		log.Printf("[rpm] %s: GPG key warning: %v", repoName, gpgErr)
+	kr, keyPath, err := gpg.Fetch(o.GPGKey, filepath.Join(destDir, gpg.KeysDirName), dl)
+	if err != nil {
+		if o.VerifySignatures {
+			return res, fmt.Errorf("[rpm] %s: %w", repoName, err)
+		}
+		log.Printf("[rpm] %s: GPG key warning: %v", repoName, err)
+	} else if keyPath != "" {
+		res.Referenced[keyPath] = true
 	}
 
-	// Fetch repomd.xml (always into memory so dry-run can parse it).
 	repomdRel := "repodata/repomd.xml"
-	var repomdURL string
 	repomdDest := filepath.Join(destDir, "repodata", "repomd.xml")
 	log.Printf("[rpm] %s: fetching repomd.xml", repoName)
 	repomdData, usedBase, err := downloader.FetchBytesFromSources(dl, ss, repomdRel)
 	if err != nil {
-		return fmt.Errorf("[rpm] %s: fetch repomd.xml: %w", repoName, err)
-	}
-	repomdURL = strings.TrimRight(usedBase, "/") + "/" + repomdRel
-	if !dl.DryRun {
-		// Write the fresh repomd.xml atomically — we already have the bytes in
-		// memory. Using a direct write (rather than downloadFileFromSources)
-		// ensures the file is updated on every run, not just the first.
-		if err := os.MkdirAll(filepath.Dir(repomdDest), 0o755); err != nil {
-			return fmt.Errorf("[rpm] %s: save repomd.xml: %w", repoName, err)
-		}
-		tmpRepomd := repomdDest + ".repomirror.tmp"
-		if err := os.WriteFile(tmpRepomd, repomdData, 0o644); err != nil { //nolint:gosec
-			_ = os.Remove(tmpRepomd) //nolint:errcheck
-			return fmt.Errorf("[rpm] %s: save repomd.xml: %w", repoName, err)
-		}
-		if err := os.Rename(tmpRepomd, repomdDest); err != nil {
-			_ = os.Remove(tmpRepomd) //nolint:errcheck
-			return fmt.Errorf("[rpm] %s: save repomd.xml: %w", repoName, err)
-		}
-	} else {
-		log.Printf("[dry-run] would download: %s", repomdURL)
-	}
-
-	// Download repomd.xml.asc / repomd.xml.key (signature) if present.
-	// Fetch fresh each run so the sig always matches the current repomd.xml.
-	for _, sigSuffix := range []string{".asc", ".key", ".sig"} {
-		sigRel := repomdRel + sigSuffix
-		sigURL := repomdURL + sigSuffix
-		sigDest := repomdDest + sigSuffix
-		if dl.DryRun {
-			log.Printf("[dry-run] would download: %s", sigURL)
-			continue
-		}
-		sigData, _, sigErr := downloader.FetchBytesFromSources(dl, ss, sigRel)
-		if sigErr != nil {
-			_ = os.Remove(sigDest) //nolint:errcheck
-			continue
-		}
-		_ = os.WriteFile(sigDest, sigData, 0o644) //nolint:errcheck,gosec
+		return res, fmt.Errorf("[rpm] %s: fetch repomd.xml: %w", repoName, err)
 	}
 	var rmd repoMD
 	if err := xml.Unmarshal(repomdData, &rmd); err != nil {
-		return fmt.Errorf("[rpm] %s: parse repomd.xml: %w", repoName, err)
+		return res, fmt.Errorf("[rpm] %s: repomd.xml is not valid repository metadata (is base_url correct?): %w", repoName, err)
+	}
+	if len(rmd.Data) == 0 {
+		return res, fmt.Errorf("[rpm] %s: repomd.xml lists no metadata", repoName)
 	}
 	log.Printf("[rpm] %s: repomd.xml loaded (%d metadata records)", repoName, len(rmd.Data))
 
-	// Download all metadata files listed in repomd.xml.
-	// Track primary metadata URL/dest for later parsing.
-	var primaryRel, primaryDest, primaryDBRel, primaryDBDest string
+	sigFiles := map[string][]byte{}
+	for _, suffix := range repomdSigSuffixes {
+		data, err := dl.FetchBytes(strings.TrimRight(usedBase, "/") + "/" + repomdRel + suffix)
+		if err == nil {
+			sigFiles[suffix] = data
+		}
+	}
+	if o.VerifySignatures && kr != nil {
+		if sig, ok := sigFiles[".asc"]; ok {
+			if err := kr.VerifyDetached(repomdData, sig); err != nil {
+				return res, fmt.Errorf("[rpm] %s: repomd.xml: %w", repoName, err)
+			}
+			log.Printf("[rpm] %s: repomd.xml signature verified", repoName)
+		} else {
+			log.Printf("[rpm] %s: repomd.xml is not signed upstream; relying on package signatures", repoName)
+		}
+	} else if o.VerifySignatures {
+		log.Printf("[rpm] %s: warning: no gpg_key set, repomd.xml signature is not checked", repoName)
+	}
+
+	var staged []downloader.Staged
+	var referenced []string
+	var primaryHref, primaryPath, primaryDBHref, primaryDBPath string
+	var metaErrors int
 	for _, d := range rmd.Data {
 		href := strings.TrimLeft(d.Location.Href, "/")
 		fileDest, err := downloader.SafeJoin(destDir, filepath.FromSlash(href))
 		if err != nil {
 			log.Printf("[rpm] %s: metadata %s: %v", repoName, href, err)
+			metaErrors++
 			continue
 		}
-		if err := downloader.DownloadFileFromSources(dl, ss, href, fileDest, d.Checksum.Type, strings.TrimSpace(d.Checksum.Value), nil); err != nil {
-			log.Printf("[rpm] %s: metadata %s: %v", repoName, href, err)
-			continue
+		referenced = append(referenced, fileDest)
+		readPath := fileDest
+		if !dl.DryRun {
+			p, st, err := downloader.StageFromSources(dl, ss, []string{href}, fileDest, d.Checksum.Type, strings.TrimSpace(d.Checksum.Value))
+			if err != nil {
+				log.Printf("[rpm] %s: metadata %s: %v", repoName, href, err)
+				metaErrors++
+				continue
+			}
+			if st != nil {
+				staged = append(staged, *st)
+			}
+			readPath = p
 		}
-		if d.Type == "primary" {
-			primaryRel = href
-			primaryDest = fileDest
+		switch d.Type {
+		case "primary":
+			primaryHref, primaryPath = href, readPath
+		case "primary_db":
+			primaryDBHref, primaryDBPath = href, readPath
 		}
-		if d.Type == "primary_db" {
-			primaryDBRel = href
-			primaryDBDest = fileDest
-		}
+	}
+	if metaErrors > 0 {
+		return res, fmt.Errorf("[rpm] %s: %d metadata file(s) failed to download", repoName, metaErrors)
+	}
+	if primaryHref == "" {
+		return res, fmt.Errorf("[rpm] %s: no primary metadata found in repomd.xml", repoName)
 	}
 
-	if primaryRel == "" {
-		return fmt.Errorf("[rpm] %s: no primary metadata found in repomd.xml", repoName)
-	}
-	mode, reason := resolvePrimaryMetadataMode(primaryMetadata, destDir, primaryDBRel != "")
+	mode, reason := resolvePrimaryMetadataMode(o.PrimaryMetadata, destDir, primaryDBHref != "")
 	if reason != "" {
 		log.Printf("[rpm] %s: primary metadata mode auto -> %s (%s)", repoName, mode, reason)
 	}
-	useSQLite := primaryDBRel != "" && mode != primaryMetaXML
+	useSQLite := primaryDBHref != "" && mode != primaryMetaXML
 	parseSource := "primary.xml"
 	if useSQLite {
 		parseSource = "primary.sqlite"
 	}
 	log.Printf("[rpm] %s: parsing primary metadata (%s)", repoName, parseSource)
 
-	// Parse primary.xml — in dry-run mode fetch into memory since the file
-	// was never written to disk.
 	var packages []rpmPkg
 	if dl.DryRun {
 		if useSQLite {
-			data, _, err := downloader.FetchBytesFromSources(dl, ss, primaryDBRel)
+			data, _, err := downloader.FetchBytesFromSources(dl, ss, primaryDBHref)
 			if err == nil {
-				packages, err = parsePrimaryDBBytes(data, fileExt(primaryDBRel), repoName)
+				packages, err = parsePrimaryDBBytes(data, fileExt(primaryDBHref), repoName)
 			}
 			if err != nil {
 				log.Printf("[rpm] %s: primary sqlite unavailable, falling back to primary.xml: %v", repoName, err)
-				data, _, err = downloader.FetchBytesFromSources(dl, ss, primaryRel)
-				if err != nil {
-					return fmt.Errorf("[rpm] %s: fetch primary for parse: %w", repoName, err)
-				}
-				packages, err = parsePrimaryBytes(data, fileExt(primaryRel), repoName)
-				if err != nil {
-					return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, err)
-				}
+				useSQLite = false
 			}
-		} else {
-			data, _, err := downloader.FetchBytesFromSources(dl, ss, primaryRel)
+		}
+		if !useSQLite {
+			data, _, err := downloader.FetchBytesFromSources(dl, ss, primaryHref)
 			if err != nil {
-				return fmt.Errorf("[rpm] %s: fetch primary for parse: %w", repoName, err)
+				return res, fmt.Errorf("[rpm] %s: fetch primary for parse: %w", repoName, err)
 			}
-			packages, err = parsePrimaryBytes(data, fileExt(primaryRel), repoName)
+			packages, err = parsePrimaryBytes(data, fileExt(primaryHref), repoName)
 			if err != nil {
-				return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, err)
+				return res, fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, err)
 			}
 		}
 	} else {
 		var parseErr error
 		if useSQLite {
-			packages, parseErr = parsePrimaryDB(primaryDBDest, repoName)
+			packages, parseErr = parsePrimaryDB(primaryDBPath, fileExt(primaryDBHref), repoName)
 			if parseErr != nil {
 				log.Printf("[rpm] %s: primary sqlite unavailable, falling back to primary.xml: %v", repoName, parseErr)
-				packages, parseErr = parsePrimary(primaryDest, repoName)
-				if parseErr != nil {
-					return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, parseErr)
-				}
+				useSQLite = false
 			}
-		} else {
-			packages, parseErr = parsePrimary(primaryDest, repoName)
+		}
+		if !useSQLite {
+			packages, parseErr = parsePrimary(primaryPath, fileExt(primaryHref), repoName)
 			if parseErr != nil {
-				return fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, parseErr)
+				return res, fmt.Errorf("[rpm] %s: parse primary metadata: %w", repoName, parseErr)
 			}
 		}
 	}
 
-	log.Printf("[rpm] %s: %d packages to mirror", repoName, len(packages))
+	total := len(packages)
+	packages = filterArches(packages, o.Arches)
+	if len(o.Arches) > 0 {
+		log.Printf("[rpm] %s: arches=%s keeps %d of %d packages", repoName, strings.Join(o.Arches, ","), len(packages), total)
+	}
 
-	// Progress tracking (skipped in dry-run since no bytes are transferred).
+	type job struct{ href, dest, algo, sum string }
+	seen := map[string]bool{}
+	var jobsList []job
+	var pathErrors int
+	for _, p := range packages {
+		href := strings.TrimLeft(p.Location.Href, "/")
+		dest, err := downloader.SafeJoin(destDir, filepath.FromSlash(href))
+		if err != nil {
+			log.Printf("[rpm] %s: package %s: %v", repoName, href, err)
+			pathErrors++
+			continue
+		}
+		if seen[dest] {
+			continue
+		}
+		seen[dest] = true
+		jobsList = append(jobsList, job{href, dest, p.Checksum.Type, strings.TrimSpace(p.Checksum.Value)})
+	}
+	log.Printf("[rpm] %s: %d packages to mirror", repoName, len(jobsList))
+
 	var prog *downloader.Counter
 	var stopProg chan struct{}
 	if !dl.DryRun {
-		prog = downloader.NewCounter(repoName, "rpm", len(packages))
+		prog = downloader.NewCounter(repoName, "rpm", len(jobsList))
 		stopProg = make(chan struct{})
 		prog.StartLogger(1*time.Second, stopProg)
 	}
 
-	// Download packages concurrently.
-	jobs := make(chan rpmPkg, len(packages))
-	for _, p := range packages {
-		jobs <- p
+	jobs := make(chan job, len(jobsList))
+	for _, j := range jobsList {
+		jobs <- j
 	}
 	close(jobs)
 
 	var wg sync.WaitGroup
-	errs := make(chan error, len(packages))
-
-	for i := 0; i < workers; i++ {
+	errs := make(chan error, len(jobsList))
+	for i := 0; i < max(o.Workers, 1); i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
-				href := strings.TrimLeft(j.Location.Href, "/")
-				pkgDest, err := downloader.SafeJoin(destDir, filepath.FromSlash(href))
-				if err != nil {
-					errs <- fmt.Errorf("%s: %w", href, err)
-					if prog != nil {
-						prog.Done()
-					}
-					continue
-				}
-				if err := downloader.DownloadFileFromSources(dl, ss, href, pkgDest, j.Checksum.Type, strings.TrimSpace(j.Checksum.Value), prog); err != nil {
-					errs <- fmt.Errorf("%s: %w", href, err)
+				if err := downloader.DownloadFileFromSources(dl, ss, j.href, j.dest, j.algo, j.sum, prog); err != nil {
+					errs <- fmt.Errorf("%s: %w", j.href, err)
 				}
 				if prog != nil {
 					prog.Done()
@@ -283,25 +311,77 @@ func Mirror(baseURL, mirrorlistURL, metalinkURL, preferredMirror, primaryMetadat
 		prog.Finish()
 	}
 
-	var errCount int
+	errCount := pathErrors
 	for err := range errs {
 		log.Printf("[rpm] %s: package error: %v", repoName, err)
 		errCount++
 	}
 	if errCount > 0 {
-		return fmt.Errorf("[rpm] %s: %d package(s) failed to download", repoName, errCount)
+		return res, fmt.Errorf("[rpm] %s: %d package(s) failed to download; repomd.xml not updated", repoName, errCount)
 	}
-	return nil
+
+	if !dl.DryRun {
+		for _, st := range staged {
+			if err := st.Publish(); err != nil {
+				return res, fmt.Errorf("[rpm] %s: publish metadata: %w", repoName, err)
+			}
+		}
+		for _, suffix := range repomdSigSuffixes {
+			dest := repomdDest + suffix
+			if data, ok := sigFiles[suffix]; ok {
+				if err := downloader.WriteFileAtomic(dest, data); err != nil {
+					return res, fmt.Errorf("[rpm] %s: save repomd.xml%s: %w", repoName, suffix, err)
+				}
+			} else {
+				_ = os.Remove(dest) //nolint:errcheck
+			}
+		}
+		if err := downloader.WriteFileAtomic(repomdDest, repomdData); err != nil {
+			return res, fmt.Errorf("[rpm] %s: save repomd.xml: %w", repoName, err)
+		}
+	}
+
+	res.Referenced[repomdDest] = true
+	for suffix := range sigFiles {
+		res.Referenced[repomdDest+suffix] = true
+	}
+	for _, p := range referenced {
+		res.Referenced[p] = true
+	}
+	for _, j := range jobsList {
+		res.Referenced[j.dest] = true
+	}
+	res.Complete = true
+	return res, nil
+}
+
+// filterArches keeps packages whose architecture is listed in arches. noarch
+// packages are always kept. An empty list keeps everything.
+func filterArches(pkgs []rpmPkg, arches []string) []rpmPkg {
+	if len(arches) == 0 {
+		return pkgs
+	}
+	keep := map[string]bool{"noarch": true}
+	for _, a := range arches {
+		keep[strings.TrimSpace(a)] = true
+	}
+	out := pkgs[:0]
+	for _, p := range pkgs {
+		if keep[strings.TrimSpace(p.Arch)] {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // parsePrimary reads and parses a possibly gzip-compressed primary.xml file.
-func parsePrimary(path, repoName string) ([]rpmPkg, error) {
-	r, cleanup, err := openPossiblyCompressed(path)
+func parsePrimary(path, ext, repoName string) ([]rpmPkg, error) {
+	r, cleanup, err := openPossiblyCompressed(path, ext)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-	total := progressTotalForStream(fileSizeOrUnknown(path), fileExt(path))
+	total := progressTotalForStream(fileSizeOrUnknown(path), ext)
 	r, stopProgress := withPrimaryParseProgress(r, repoName, "parsing primary metadata", total)
 	defer stopProgress()
 
@@ -342,13 +422,13 @@ func parsePrimaryBytes(data []byte, ext, repoName string) ([]rpmPkg, error) {
 	return pm.Packages, nil
 }
 
-func parsePrimaryDB(path, repoName string) ([]rpmPkg, error) {
-	r, cleanup, err := openPossiblyCompressed(path)
+func parsePrimaryDB(path, ext, repoName string) ([]rpmPkg, error) {
+	r, cleanup, err := openPossiblyCompressed(path, ext)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-	total := progressTotalForStream(fileSizeOrUnknown(path), fileExt(path))
+	total := progressTotalForStream(fileSizeOrUnknown(path), ext)
 	r, stopProgress := withPrimaryParseProgress(r, repoName, "loading primary sqlite", total)
 
 	tmp, err := os.CreateTemp("", "repomirror-primary-*.sqlite")
@@ -357,8 +437,8 @@ func parsePrimaryDB(path, repoName string) ([]rpmPkg, error) {
 		return nil, err
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	defer tmp.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
+	defer func() { _ = tmp.Close() }()
 
 	if _, err := io.Copy(tmp, r); err != nil {
 		stopProgress()
@@ -388,8 +468,8 @@ func parsePrimaryDBBytes(data []byte, ext, repoName string) ([]rpmPkg, error) {
 		return nil, err
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	defer tmp.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
+	defer func() { _ = tmp.Close() }()
 
 	if _, err := io.Copy(tmp, r); err != nil {
 		stopProgress()
@@ -409,7 +489,7 @@ func queryPrimarySQLite(path, repoName string) ([]rpmPkg, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	var total int64
 	if countErr := db.QueryRow("SELECT COUNT(*) FROM packages").Scan(&total); countErr != nil {
@@ -419,19 +499,20 @@ func queryPrimarySQLite(path, repoName string) ([]rpmPkg, error) {
 	progress := newParseItemProgress(repoName, "parsing primary metadata", total)
 	defer progress.finish()
 
-	rows, err := db.Query("SELECT location_href, pkgId, checksum_type FROM packages")
+	rows, err := db.Query("SELECT location_href, pkgId, checksum_type, COALESCE(arch, '') FROM packages")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	packages := make([]rpmPkg, 0, total)
 	for rows.Next() {
-		var href, pkgID, checksumType string
-		if err := rows.Scan(&href, &pkgID, &checksumType); err != nil {
+		var href, pkgID, checksumType, arch string
+		if err := rows.Scan(&href, &pkgID, &checksumType, &arch); err != nil {
 			return nil, err
 		}
 		packages = append(packages, rpmPkg{
+			Arch:     arch,
 			Location: pkgLocation{Href: href},
 			Checksum: checksum{Type: checksumType, Value: pkgID},
 		})
@@ -649,7 +730,7 @@ func filesystemTypeForPath(target string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	target = filepath.Clean(target)
 	bestMount := ""

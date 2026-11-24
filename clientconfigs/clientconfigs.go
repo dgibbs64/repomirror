@@ -10,123 +10,163 @@ import (
 	"strings"
 
 	"repomirror/config"
+	"repomirror/gpg"
 )
 
-// Generate writes client config files under outputDir/client-configs/.
+// Generate writes client config files under outputDir/client-configs/ for
+// every enabled repo. With cleanStale it also removes config files left over
+// from repos that are no longer enabled.
 //
-//	outputDir/client-configs/yum.repos.d/<name>.repo              — one per RPM repo
-//	outputDir/client-configs/apt/sources.list.d/<name>.list       — one per DEB repo (legacy format)
-//	outputDir/client-configs/apt/sources.list.d/<name>.sources    — one per DEB repo (deb822 format, Ubuntu 22.04+ / Debian 12+)
+//	outputDir/client-configs/yum.repos.d/<name>.repo              one per RPM repo
+//	outputDir/client-configs/apt/sources.list.d/<name>.list       one per DEB repo (legacy format)
+//	outputDir/client-configs/apt/sources.list.d/<name>.sources    one per DEB repo (deb822 format, Ubuntu 22.04+ / Debian 12+)
 //
-// mirrorURL is the base URL clients use to reach the mirror server,
-// e.g. "http://mirror.example.com". If empty the files are not written.
-func Generate(cfg *config.Config, outputDir, mirrorURL string) error {
+// Signing keys are referenced from the mirror itself. mirrorURL is the base URL clients use to reach the mirror
+// server, e.g. "http://mirror.example.com". If empty no files are written.
+func Generate(cfg *config.Config, outputDir, mirrorURL string, cleanStale bool) error {
 	if mirrorURL == "" {
 		return nil
 	}
 	mirrorURL = strings.TrimRight(mirrorURL, "/")
 
-	if err := generateRPM(cfg, outputDir, mirrorURL); err != nil {
+	if err := generateRPM(cfg, outputDir, mirrorURL, cleanStale); err != nil {
 		return err
 	}
-	return generateDEB(cfg, outputDir, mirrorURL)
+	return generateDEB(cfg, outputDir, mirrorURL, cleanStale)
 }
 
-func generateRPM(cfg *config.Config, outputDir, mirrorURL string) error {
-	if len(cfg.RPMRepos) == 0 {
-		return nil
+func repoURL(mirrorURL, path, name string) string {
+	if path == "" {
+		path = name
 	}
+	return mirrorURL + "/" + strings.Trim(filepath.ToSlash(path), "/")
+}
+
+func keyURL(repoURL, gpgKey string) string {
+	return repoURL + "/" + gpg.KeysDirName + "/" + gpg.KeyFileName(gpgKey)
+}
+
+func generateRPM(cfg *config.Config, outputDir, mirrorURL string, cleanStale bool) error {
 	dir := filepath.Join(outputDir, "client-configs", "yum.repos.d")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dir, err)
-	}
+	written := map[string]bool{}
 
 	for _, repo := range cfg.RPMRepos {
-		path := repo.Path
-		if path == "" {
-			path = repo.Name
+		if !repo.Enabled() || repo.Name == "" {
+			continue
 		}
-		baseURL := mirrorURL + "/" + strings.TrimLeft(filepath.ToSlash(path), "/") + "/"
-
-		// GPG key URL: point at the locally mirrored copy.
-		gpgKeyURL := ""
-		if repo.GPGKey != "" {
-			keyFile := filepath.Base(repo.GPGKey)
-			gpgKeyURL = baseURL + "gpg-keys/" + keyFile
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", dir, err)
 		}
+		base := repoURL(mirrorURL, repo.Path, repo.Name)
 
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "[%s]\n", repo.Name)
 		fmt.Fprintf(&sb, "name=%s\n", repo.Name)
-		fmt.Fprintf(&sb, "baseurl=%s\n", baseURL)
+		fmt.Fprintf(&sb, "baseurl=%s/\n", base)
 		fmt.Fprintf(&sb, "enabled=1\n")
-		if gpgKeyURL != "" {
+		if repo.GPGKey != "" {
 			fmt.Fprintf(&sb, "gpgcheck=1\n")
-			fmt.Fprintf(&sb, "gpgkey=%s\n", gpgKeyURL)
+			fmt.Fprintf(&sb, "gpgkey=%s\n", keyURL(base, repo.GPGKey))
 		} else {
 			fmt.Fprintf(&sb, "gpgcheck=0\n")
 		}
 
-		dest := filepath.Join(dir, repo.Name+".repo")
+		name := repo.Name + ".repo"
+		written[name] = true
+		dest := filepath.Join(dir, name)
 		if err := os.WriteFile(dest, []byte(sb.String()), 0o644); err != nil { //nolint:gosec
 			return fmt.Errorf("write %s: %w", dest, err)
 		}
 	}
-	return nil
-}
-
-func generateDEB(cfg *config.Config, outputDir, mirrorURL string) error {
-	if len(cfg.DEBRepos) == 0 {
+	if !cleanStale {
 		return nil
 	}
+	return removeStale(dir, written, ".repo")
+}
+
+func generateDEB(cfg *config.Config, outputDir, mirrorURL string, cleanStale bool) error {
 	dir := filepath.Join(outputDir, "client-configs", "apt", "sources.list.d")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dir, err)
-	}
+	written := map[string]bool{}
 
 	for _, repo := range cfg.DEBRepos {
-		path := repo.Path
-		if path == "" {
-			path = repo.Name
+		if !repo.Enabled() || repo.Name == "" {
+			continue
 		}
-		repoURL := mirrorURL + "/" + strings.TrimLeft(filepath.ToSlash(path), "/")
-
-		keyringPath := fmt.Sprintf("/etc/apt/keyrings/%s.gpg", repo.Name)
-
-		// Legacy one-line format — works on all Debian/Ubuntu versions.
-		// [signed-by=] is supported on Ubuntu 20.04+ / Debian 10+ and is
-		// strongly recommended over the deprecated apt-key approach.
-		var legacy strings.Builder
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", dir, err)
+		}
+		url := repoURL(mirrorURL, repo.Path, repo.Name)
+		keyringPath := fmt.Sprintf("/etc/apt/keyrings/%s.asc", repo.Name)
+		installKey := ""
 		if repo.GPGKey != "" {
-			fmt.Fprintf(&legacy, "# Import GPG key: curl -fsSL %s | gpg --dearmor -o %s\n", repo.GPGKey, keyringPath)
+			installKey = fmt.Sprintf("# Install the signing key: sudo curl -fsSL %s -o %s\n", keyURL(url, repo.GPGKey), keyringPath)
 		}
+		components := strings.Join(repo.Components, " ")
+
+		var legacy strings.Builder
+		legacy.WriteString(installKey)
 		for _, suite := range repo.Suites {
+			line := "deb "
 			if repo.GPGKey != "" {
-				fmt.Fprintf(&legacy, "deb [signed-by=%s] %s %s %s\n", keyringPath, repoURL, suite, strings.Join(repo.Components, " "))
-			} else {
-				fmt.Fprintf(&legacy, "deb %s %s %s\n", repoURL, suite, strings.Join(repo.Components, " "))
+				line += fmt.Sprintf("[signed-by=%s] ", keyringPath)
 			}
+			line += url + " " + suite
+			if components != "" {
+				line += " " + components
+			}
+			legacy.WriteString(line + "\n")
 		}
-		dest := filepath.Join(dir, repo.Name+".list")
+		listName := repo.Name + ".list"
+		written[listName] = true
+		dest := filepath.Join(dir, listName)
 		if err := os.WriteFile(dest, []byte(legacy.String()), 0o644); err != nil { //nolint:gosec
 			return fmt.Errorf("write %s: %w", dest, err)
 		}
 
-		// deb822 format — preferred on Ubuntu 22.04+ and Debian 12+.
-		// Multiple suites are combined into a single stanza.
 		var deb822 strings.Builder
+		deb822.WriteString(installKey)
 		fmt.Fprintf(&deb822, "Types: deb\n")
-		fmt.Fprintf(&deb822, "URIs: %s\n", repoURL)
+		fmt.Fprintf(&deb822, "URIs: %s\n", url)
 		fmt.Fprintf(&deb822, "Suites: %s\n", strings.Join(repo.Suites, " "))
-		fmt.Fprintf(&deb822, "Components: %s\n", strings.Join(repo.Components, " "))
+		if components != "" {
+			fmt.Fprintf(&deb822, "Components: %s\n", components)
+		}
 		if repo.GPGKey != "" {
 			fmt.Fprintf(&deb822, "Signed-By: %s\n", keyringPath)
-			fmt.Fprintf(&deb822, "# Import GPG key: curl -fsSL %s | gpg --dearmor -o %s\n", repo.GPGKey, keyringPath)
 		}
 
-		dest822 := filepath.Join(dir, repo.Name+".sources")
+		sourcesName := repo.Name + ".sources"
+		written[sourcesName] = true
+		dest822 := filepath.Join(dir, sourcesName)
 		if err := os.WriteFile(dest822, []byte(deb822.String()), 0o644); err != nil { //nolint:gosec
 			return fmt.Errorf("write %s: %w", dest822, err)
+		}
+	}
+	if !cleanStale {
+		return nil
+	}
+	return removeStale(dir, written, ".list", ".sources")
+}
+
+func removeStale(dir string, written map[string]bool, exts ...string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || written[e.Name()] {
+			continue
+		}
+		for _, ext := range exts {
+			if strings.HasSuffix(e.Name(), ext) {
+				if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+					return err
+				}
+				break
+			}
 		}
 	}
 	return nil

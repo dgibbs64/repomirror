@@ -11,16 +11,74 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the top-level configuration structure read from mirrors.yaml.
+// Config is the top-level configuration structure read from mirrors.yml.
 type Config struct {
 	OutputDir string `yaml:"output_dir"`
 	MirrorURL string `yaml:"mirror_url"` // base URL clients use to reach this mirror, e.g. http://mirror.example.com
 	// RPMPrimaryMetadata controls RPM metadata parsing mode globally: auto, sqlite, or xml.
 	RPMPrimaryMetadata string `yaml:"rpm_primary_metadata"`
 	// Workers accepts an integer (e.g. 4) or "auto" to use runtime.NumCPU().
-	Workers  WorkerCount `yaml:"workers"`
-	RPMRepos []RPMRepo   `yaml:"rpm_repos"`
-	DEBRepos []DEBRepo   `yaml:"deb_repos"`
+	Workers WorkerCount `yaml:"workers"`
+	// VerifySignatures checks Release/InRelease and repomd.xml signatures
+	// against each repo's gpg_key. Defaults to true.
+	VerifySignatures *bool `yaml:"verify_signatures"`
+	// Prune deletes files under each repo path that upstream no longer lists.
+	Prune bool `yaml:"prune"`
+	// UserAgent overrides the HTTP User-Agent header.
+	UserAgent string `yaml:"user_agent"`
+	// RateLimit caps total download speed, e.g. 10M (bytes per second).
+	RateLimit ByteRate  `yaml:"rate_limit"`
+	RPMRepos  []RPMRepo `yaml:"rpm_repos"`
+	DEBRepos  []DEBRepo `yaml:"deb_repos"`
+}
+
+// SignaturesEnabled reports whether repository signatures should be checked.
+func (c *Config) SignaturesEnabled() bool {
+	return c.VerifySignatures == nil || *c.VerifySignatures
+}
+
+// ByteRate is a transfer rate in bytes per second. YAML accepts plain
+// numbers or a K, M or G suffix (powers of 1024), e.g. 512K or 10M.
+type ByteRate int64
+
+func (b *ByteRate) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.ScalarNode {
+		return fmt.Errorf("rate_limit must be a number like 10M")
+	}
+	n, err := ParseByteRate(value.Value)
+	if err != nil {
+		return err
+	}
+	*b = ByteRate(n)
+	return nil
+}
+
+// ParseByteRate parses values such as "0", "750K", "10M", "1.5G" or "10MB/s".
+func ParseByteRate(raw string) (int64, error) {
+	v := strings.ToUpper(strings.TrimSpace(raw))
+	v = strings.TrimSuffix(v, "/S")
+	v = strings.TrimSuffix(v, "IB")
+	v = strings.TrimSuffix(v, "B")
+	if v == "" {
+		return 0, nil
+	}
+	mult := 1.0
+	switch v[len(v)-1] {
+	case 'K':
+		mult = 1024
+	case 'M':
+		mult = 1024 * 1024
+	case 'G':
+		mult = 1024 * 1024 * 1024
+	}
+	if mult != 1 {
+		v = v[:len(v)-1]
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+	if err != nil || f < 0 {
+		return 0, fmt.Errorf("rate_limit must be a number like 10M, got %q", raw)
+	}
+	return int64(f * mult), nil
 }
 
 // WorkerCount supports YAML values like `workers: 4` and `workers: auto`.
@@ -49,30 +107,48 @@ func (w *WorkerCount) UnmarshalYAML(value *yaml.Node) error {
 
 // RPMRepo describes a YUM/DNF repository to mirror.
 type RPMRepo struct {
-	Enable          *bool    `yaml:"enable"` // nil or true => enabled, false => skipped
-	Name            string   `yaml:"name"`
-	Path            string   `yaml:"path"`             // URL path served by the webserver, e.g. rocky/9/BaseOS/x86_64/os
-	BaseURL         string   `yaml:"base_url"`         // explicit mirror/base URL; preferred when set
-	Mirrorlist      string   `yaml:"mirrorlist"`       // optional URL returning plain-text mirror URLs
-	Metalink        string   `yaml:"metalink"`         // optional URL returning metalink XML mirror URLs
-	PreferredMirror string   `yaml:"preferred_mirror"` // optional host/substr preferred when using mirrorlist/metalink
-	Arches          []string `yaml:"arches"`
-	GPGKey          string   `yaml:"gpg_key"` // URL to the GPG public key
+	Enable           *bool    `yaml:"enable"`            // nil or true => enabled, false => skipped
+	VerifySignatures *bool    `yaml:"verify_signatures"` // overrides the global verify_signatures for this repo
+	Name             string   `yaml:"name"`
+	Path             string   `yaml:"path"`             // URL path served by the webserver, e.g. rocky/9/BaseOS/x86_64/os
+	BaseURL          string   `yaml:"base_url"`         // explicit mirror/base URL; preferred when set
+	Mirrorlist       string   `yaml:"mirrorlist"`       // optional URL returning plain-text mirror URLs
+	Metalink         string   `yaml:"metalink"`         // optional URL returning metalink XML mirror URLs
+	PreferredMirror  string   `yaml:"preferred_mirror"` // optional host/substr preferred when using mirrorlist/metalink
+	Arches           []string `yaml:"arches"`           // optional package arch filter, e.g. [x86_64]; noarch is always kept
+	GPGKey           string   `yaml:"gpg_key"`          // URL to the GPG public key
 }
 
 // DEBRepo describes an APT repository to mirror.
 type DEBRepo struct {
-	Enable          *bool    `yaml:"enable"` // nil or true => enabled, false => skipped
-	Name            string   `yaml:"name"`
-	Path            string   `yaml:"path"`             // URL path served by the webserver, e.g. ubuntu
-	Mirror          string   `yaml:"mirror"`           // explicit mirror/base URL; preferred when set
-	Mirrorlist      string   `yaml:"mirrorlist"`       // optional URL returning plain-text mirror URLs
-	Metalink        string   `yaml:"metalink"`         // optional URL returning metalink XML mirror URLs
-	PreferredMirror string   `yaml:"preferred_mirror"` // optional host/substr preferred when using mirrorlist/metalink
-	Suites          []string `yaml:"suites"`           // e.g. jammy, jammy-updates
-	Components      []string `yaml:"components"`       // e.g. main, restricted, universe
-	Arches          []string `yaml:"arches"`           // e.g. amd64
-	GPGKey          string   `yaml:"gpg_key"`          // URL to the GPG public key
+	Enable           *bool    `yaml:"enable"`            // nil or true => enabled, false => skipped
+	VerifySignatures *bool    `yaml:"verify_signatures"` // overrides the global verify_signatures for this repo
+	Name             string   `yaml:"name"`
+	Path             string   `yaml:"path"`             // URL path served by the webserver, e.g. ubuntu
+	Mirror           string   `yaml:"mirror"`           // explicit mirror/base URL; preferred when set
+	Mirrorlist       string   `yaml:"mirrorlist"`       // optional URL returning plain-text mirror URLs
+	Metalink         string   `yaml:"metalink"`         // optional URL returning metalink XML mirror URLs
+	PreferredMirror  string   `yaml:"preferred_mirror"` // optional host/substr preferred when using mirrorlist/metalink
+	Suites           []string `yaml:"suites"`           // e.g. jammy, jammy-updates
+	Components       []string `yaml:"components"`       // e.g. main, restricted, universe
+	Arches           []string `yaml:"arches"`           // e.g. amd64
+	GPGKey           string   `yaml:"gpg_key"`          // URL to the GPG public key
+}
+
+// Verify returns the effective verify_signatures setting for this repo.
+func (r RPMRepo) Verify(global bool) bool {
+	if r.VerifySignatures != nil {
+		return *r.VerifySignatures
+	}
+	return global
+}
+
+// Verify returns the effective verify_signatures setting for this repo.
+func (r DEBRepo) Verify(global bool) bool {
+	if r.VerifySignatures != nil {
+		return *r.VerifySignatures
+	}
+	return global
 }
 
 // Enabled returns true unless enable is explicitly set to false.
@@ -160,7 +236,7 @@ func repoDisplayName(name, path string) string {
 // ExampleConfig returns a commented example config YAML string.
 func ExampleConfig() string {
 	return `# repomirror configuration file
-# Place this file (mirrors.yaml) in the same directory as the repomirror binary.
+# Place this file (mirrors.yml) in the same directory as the repomirror binary.
 #
 # 'output_dir' is the root that your webserver serves.  Each repo's 'path'
 # maps directly to the URL path clients will use, e.g.:
@@ -171,10 +247,14 @@ output_dir: ./mirror              # root served by nginx/apache
 mirror_url: http://mirror.example.com  # base URL clients use to reach this server
 rpm_primary_metadata: auto        # global: auto, sqlite, or xml
 workers: auto                     # integer (e.g. 4) or auto
+verify_signatures: true           # check repo signatures against gpg_key
+prune: true                       # delete files upstream no longer lists
+# rate_limit: 10M                 # total download speed cap in bytes/s
+# user_agent: repomirror/custom   # override the HTTP User-Agent
 
 rpm_repos:
 
-  # Rocky Linux 9 — two separate repo entries, one per repo path
+  # Rocky Linux 9: two separate repo entries, one per repo path
   - name: rocky-9-baseos
     enable: true
     path: rocky/9/BaseOS/x86_64/os
@@ -183,6 +263,7 @@ rpm_repos:
     # mirrorlist: https://mirrors.example.org/mirrorlist.txt
     # metalink: https://mirrors.example.org/repo.metalink
     # preferred_mirror: dl.rockylinux.org
+    # arches: [x86_64]                # optional; noarch is always kept
     gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-9
 
   - name: rocky-9-appstream
@@ -206,7 +287,7 @@ rpm_repos:
   - name: zabbix-70-rocky9
     path: zabbix/7.0/rhel/9/x86_64
     base_url: https://repo.zabbix.com/zabbix/7.0/rhel/9/x86_64/
-    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-A14FE591
+    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-B5333005
 
 deb_repos:
 
