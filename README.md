@@ -56,13 +56,13 @@ The exit code is non-zero if any repository, suite, metadata file or package fai
 
 ### Flags
 
-| Flag        | Default                                          | Description                                    |
-| ----------- | ------------------------------------------------ | ---------------------------------------------- |
-| `-config`   | `mirrors.yml` or `mirrors.yaml` (next to binary) | Path to config file                            |
-| `-init`     |                                                  | Write example config and exit                  |
-| `-validate` |                                                  | Validate config and exit                       |
-| `-dry-run`  |                                                  | Preview downloads and pruning without changes  |
-| `-version`  |                                                  | Print version and exit                         |
+| Flag        | Default                                          | Description                                   |
+| ----------- | ------------------------------------------------ | --------------------------------------------- |
+| `-config`   | `mirrors.yml` or `mirrors.yaml` (next to binary) | Path to config file                           |
+| `-init`     |                                                  | Write example config and exit                 |
+| `-validate` |                                                  | Validate config and exit                      |
+| `-dry-run`  |                                                  | Preview downloads and pruning without changes |
+| `-version`  |                                                  | Print version and exit                        |
 
 ## Configuration
 
@@ -129,10 +129,10 @@ Repos nested inside another repo's path are never touched by the outer repo's pr
 
 The [examples/](examples/) directory contains ready-to-paste snippets for common repositories:
 
-| File                                               | Contents |
-| -------------------------------------------------- | -------- |
+| File                                               | Contents                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [examples/rpm-repos.yaml](examples/rpm-repos.yaml) | CentOS Stream 9/10, Rocky Linux 8/9/10, AlmaLinux 8/9/10, Fedora 44/45, EPEL 8/9/10, Zabbix 7.0/8.0, PostgreSQL 17/18, MySQL 8.4, Docker CE, Elasticsearch 8/9, OpenSearch 2/3, Microsoft, HashiCorp, Grafana, InfluxData, Nginx, MariaDB 10.11/11.8, MongoDB 8.0, Kubernetes 1.36/1.37, osquery |
-| [examples/deb-repos.yaml](examples/deb-repos.yaml) | Ubuntu 22.04/24.04/26.04, Debian 12/13, Zabbix 7.0/8.0, PostgreSQL, Docker CE, Elasticsearch 8/9, OpenSearch 3, Microsoft, HashiCorp, Grafana, InfluxData, Nginx, MariaDB 10.11/11.8, MongoDB 8.0, Kubernetes 1.36/1.37, osquery |
+| [examples/deb-repos.yaml](examples/deb-repos.yaml) | Ubuntu 22.04/24.04/26.04, Debian 12/13, Zabbix 7.0/8.0, PostgreSQL, Docker CE, Elasticsearch 8/9, OpenSearch 3, Microsoft, HashiCorp, Grafana, InfluxData, Nginx, MariaDB 10.11/11.8, MongoDB 8.0, Kubernetes 1.36/1.37, osquery                                                                 |
 
 Copy the relevant blocks into the `rpm_repos` or `deb_repos` section of your `mirrors.yml`.
 
