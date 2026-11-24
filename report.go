@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"repomirror/downloader"
 )
@@ -83,9 +82,9 @@ func (s reportStyle) paint(code, text string) string {
 	return "\033[" + code + "m" + text + "\033[0m"
 }
 
-func (s reportStyle) good(text string) string { return s.pick("✔ ", "") + text }
+func (s reportStyle) good(text string) string { return s.pick("✓ ", "") + text }
 
-func (s reportStyle) bad(text string) string { return s.pick("✘ ", "") + text }
+func (s reportStyle) bad(text string) string { return s.pick("✗ ", "") + text }
 
 func (s reportStyle) skip(text string) string { return s.pick("– ", "") + text }
 
@@ -113,11 +112,11 @@ type column struct {
 func (s reportStyle) table(w io.Writer, cols []column, rows, footer [][]cell) {
 	widths := make([]int, len(cols))
 	for i, c := range cols {
-		widths[i] = utf8.RuneCountInString(c.title)
+		widths[i] = displayWidth(c.title)
 	}
 	for _, row := range append(append([][]cell{}, rows...), footer...) {
 		for i, c := range row {
-			widths[i] = max(widths[i], utf8.RuneCountInString(c.text))
+			widths[i] = max(widths[i], displayWidth(c.text))
 		}
 	}
 
@@ -133,7 +132,7 @@ func (s reportStyle) table(w io.Writer, cols []column, rows, footer [][]cell) {
 		var b strings.Builder
 		b.WriteString(s.paint(colorDim, v))
 		for i, c := range cells {
-			pad := strings.Repeat(" ", widths[i]-utf8.RuneCountInString(c.text))
+			pad := strings.Repeat(" ", widths[i]-displayWidth(c.text))
 			text := s.paint(c.color, c.text)
 			if right(i) {
 				text = pad + text
@@ -309,7 +308,7 @@ func (r *runReport) writeErrors(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, s.paint(colorRed, fmt.Sprintf("Errors (%d)", len(r.Errors))))
 	for _, msg := range r.Errors {
-		fmt.Fprintf(w, "  %s %s\n", s.paint("31", s.pick("✘", "-")), msg)
+		fmt.Fprintf(w, "  %s %s\n", s.paint("31", s.pick("✗", "-")), msg)
 	}
 }
 
@@ -347,4 +346,26 @@ func fmtCount(n int) string {
 		b.WriteString(s[i : i+3])
 	}
 	return b.String()
+}
+
+var wideRanges = [][2]rune{
+	{0x1100, 0x115F}, {0x2E80, 0x303E}, {0x3041, 0x33FF}, {0x3400, 0x4DBF},
+	{0x4E00, 0x9FFF}, {0xA000, 0xA4CF}, {0xAC00, 0xD7A3}, {0xF900, 0xFAFF},
+	{0xFE30, 0xFE4F}, {0xFF00, 0xFF60}, {0xFFE0, 0xFFE6}, {0x1F300, 0x1F64F},
+	{0x1F900, 0x1F9FF}, {0x20000, 0x3FFFD},
+}
+
+// displayWidth returns the number of terminal cells text occupies.
+func displayWidth(text string) int {
+	n := 0
+	for _, r := range text {
+		n++
+		for _, wr := range wideRanges {
+			if r >= wr[0] && r <= wr[1] {
+				n++
+				break
+			}
+		}
+	}
+	return n
 }
