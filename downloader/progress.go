@@ -45,6 +45,26 @@ func SupportsUnicode() bool {
 	return strings.Contains(check, "UTF-8") || strings.Contains(check, "UTF8")
 }
 
+// PlainProgressInterval is how often progress is logged when stderr is not a
+// terminal.
+const PlainProgressInterval = 30 * time.Second
+
+// PlainProgress throttles progress lines written to a non-interactive log.
+type PlainProgress struct{ last time.Time }
+
+// NewPlainProgress returns a throttle whose first line is due one interval
+// from now.
+func NewPlainProgress() PlainProgress { return PlainProgress{last: time.Now()} }
+
+// Due reports whether a progress line should be logged at now.
+func (p *PlainProgress) Due(now time.Time) bool {
+	if now.Sub(p.last) < PlainProgressInterval {
+		return false
+	}
+	p.last = now
+	return true
+}
+
 // IsInteractiveStderr reports whether stderr is an interactive terminal.
 func IsInteractiveStderr() bool {
 	if os.Getenv("TERM") == "dumb" {
@@ -90,25 +110,29 @@ func (t termTheme) icon(repoType string) string {
 
 // Counter tracks download progress for one repo mirror run.
 type Counter struct {
-	name     string
-	repoType string // "rpm" or "deb"
-	total    int64
-	done     atomic.Int64
-	bytes    atomic.Int64
-	active   atomic.Value // string
-	activeOp atomic.Value // "download" | "validate"
-	activeTx atomic.Int64
-	activeSz atomic.Int64 // -1 when unknown
-	start    time.Time
+	name        string
+	repoType    string // "rpm" or "deb"
+	total       int64
+	done        atomic.Int64
+	bytes       atomic.Int64
+	active      atomic.Value // string
+	activeOp    atomic.Value // "download" | "validate"
+	activeTx    atomic.Int64
+	activeSz    atomic.Int64 // -1 when unknown
+	start       time.Time
+	interactive bool
+	plain       PlainProgress
 }
 
 // NewCounter creates a Counter for a repo with the given total package count.
 func NewCounter(name, repoType string, total int) *Counter {
 	return &Counter{
-		name:     name,
-		repoType: repoType,
-		total:    int64(total),
-		start:    time.Now(),
+		name:        name,
+		repoType:    repoType,
+		total:       int64(total),
+		start:       time.Now(),
+		interactive: IsInteractiveStderr(),
+		plain:       NewPlainProgress(),
 	}
 }
 
@@ -193,6 +217,13 @@ func (c *Counter) Log() {
 		rateText,
 		progressTheme.paint("2", eta))
 
+	if !c.interactive {
+		if c.plain.Due(time.Now()) {
+			log.Printf("%s", stripANSI(base))
+		}
+		return
+	}
+
 	line := base
 
 	if v := c.active.Load(); v != nil {
@@ -239,8 +270,9 @@ func (c *Counter) Log() {
 // Finish clears the live progress line and prints a final summary via the
 // standard logger (which adds a timestamp and newline).
 func (c *Counter) Finish() {
-	// Erase the in-place progress line.
-	fmt.Fprintf(os.Stderr, "\r\033[K")
+	if c.interactive {
+		fmt.Fprintf(os.Stderr, "\r\033[K")
+	}
 	elapsed := time.Since(c.start)
 	bytes := c.bytes.Load()
 	if bytes == 0 {

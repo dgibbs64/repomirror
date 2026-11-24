@@ -112,6 +112,7 @@ func main() { //nolint:gocyclo
 			report.add(repoReport{Type: "deb", Name: displayName(repo.Name, repo.Path), Status: statusSkipped})
 			continue
 		}
+		endGroup := ciGroup("[deb] " + displayName(repo.Name, repo.Path))
 		start := time.Now()
 		res, err := deb.Mirror(deb.Options{
 			Name:             repo.Name,
@@ -127,6 +128,7 @@ func main() { //nolint:gocyclo
 			Workers:          int(cfg.Workers),
 			VerifySignatures: repo.Verify(verify),
 		}, dl)
+		endGroup()
 		if err != nil {
 			log.Printf("ERROR: %s: %v", displayName(repo.Name, repo.Path), err)
 			exitCode = 1
@@ -144,6 +146,7 @@ func main() { //nolint:gocyclo
 			report.add(repoReport{Type: "rpm", Name: displayName(repo.Name, repo.Path), Status: statusSkipped})
 			continue
 		}
+		endGroup := ciGroup("[rpm] " + displayName(repo.Name, repo.Path))
 		start := time.Now()
 		res, err := rpm.Mirror(rpm.Options{
 			Name:             repo.Name,
@@ -158,6 +161,7 @@ func main() { //nolint:gocyclo
 			Workers:          int(cfg.Workers),
 			VerifySignatures: repo.Verify(verify),
 		}, dl)
+		endGroup()
 		if err != nil {
 			log.Printf("ERROR: %s: %v", displayName(repo.Name, repo.Path), err)
 			exitCode = 1
@@ -166,7 +170,9 @@ func main() { //nolint:gocyclo
 		report.add(newRepoReport("rpm", displayName(repo.Name, repo.Path), res.Packages, res.Failed, res.Bytes, time.Since(start), err))
 	}
 
+	endGroup := ciGroup("Cleanup")
 	cleanMirrorPaths(paths, outputDir, cfg.Prune, *dryRun, report)
+	endGroup()
 
 	// Generate client config files (yum .repo / apt .list) pointing at the mirror.
 	if cfg.MirrorURL != "" {
@@ -180,6 +186,7 @@ func main() { //nolint:gocyclo
 	}
 
 	report.write(log.Writer(), time.Since(runStart))
+	ciAnnotateErrors(report.Errors)
 
 	if exitCode == 0 {
 		if *dryRun {
@@ -192,6 +199,29 @@ func main() { //nolint:gocyclo
 	}
 	unlock()
 	os.Exit(exitCode)
+}
+
+func inGitHubActions() bool { return os.Getenv("GITHUB_ACTIONS") == "true" }
+
+// ciGroup starts a collapsible log group when running in GitHub Actions and
+// returns the function that ends it.
+func ciGroup(title string) func() {
+	if !inGitHubActions() {
+		return func() {}
+	}
+	fmt.Fprintf(log.Writer(), "::group::%s\n", title)
+	return func() { fmt.Fprintln(log.Writer(), "::endgroup::") }
+}
+
+// ciAnnotateErrors adds each error to the GitHub Actions run summary.
+func ciAnnotateErrors(errs []string) {
+	if !inGitHubActions() {
+		return
+	}
+	for _, msg := range errs {
+		msg = strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A").Replace(msg)
+		fmt.Fprintf(log.Writer(), "::error::%s\n", msg)
+	}
 }
 
 func newRepoReport(repoType, name string, packages, failed int, bytes int64, d time.Duration, err error) repoReport {
