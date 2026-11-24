@@ -2,6 +2,7 @@
 package downloader
 
 import (
+	"context"
 	"crypto/md5"  //nolint:gosec
 	"crypto/sha1" //nolint:gosec
 	"crypto/sha256"
@@ -23,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/time/rate"
 	_ "modernc.org/sqlite" // register sqlite driver
 )
 
@@ -50,9 +52,69 @@ var (
 
 // Client wraps an http.Client with retry and resume logic.
 type Client struct {
-	HTTP    *http.Client
-	Retries int
-	DryRun  bool // if true, DownloadFile creates dirs and logs but skips actual downloads
+	HTTP      *http.Client
+	Retries   int
+	DryRun    bool // if true, DownloadFile creates dirs and logs but skips actual downloads
+	UserAgent string
+	limiter   *rate.Limiter
+}
+
+const rateLimitBurst = 256 * 1024
+
+// SetRateLimit caps the combined transfer rate of all downloads made by c.
+// A value of zero or less removes the limit.
+func (c *Client) SetRateLimit(bytesPerSecond int64) {
+	if bytesPerSecond <= 0 {
+		c.limiter = nil
+		return
+	}
+	burst := max(int(bytesPerSecond), rateLimitBurst)
+	c.limiter = rate.NewLimiter(rate.Limit(bytesPerSecond), burst)
+}
+
+func (c *Client) newRequest(url string) (*http.Request, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil) // #nosec G107 – URL comes from user config
+	if err != nil {
+		return nil, err
+	}
+	if c.UserAgent != "" {
+		req.Header.Set("User-Agent", c.UserAgent)
+	}
+	return req, nil
+}
+
+func retryDelay(attempt int) time.Duration {
+	return time.Duration(1<<min(attempt, 5)) * time.Second
+}
+
+func httpStatusError(code int, url string) error {
+	err := fmt.Errorf("HTTP %d for %s", code, url)
+	if code >= 400 && code < 500 && code != http.StatusTooManyRequests && code != http.StatusRequestTimeout {
+		return permanentError{err}
+	}
+	return err
+}
+
+func waitForTokens(l *rate.Limiter, n int) {
+	for n > 0 {
+		chunk := min(n, l.Burst())
+		_ = l.WaitN(context.Background(), chunk) //nolint:errcheck
+		n -= chunk
+	}
+}
+
+// NormalizeAlgo maps checksum type names used by repository metadata to the
+// names understood by the downloader. "sha" is the createrepo name for SHA-1.
+func NormalizeAlgo(algo string) string {
+	a := strings.ToLower(strings.TrimSpace(algo))
+	a = strings.ReplaceAll(a, "-", "")
+	switch a {
+	case "sha":
+		return "sha1"
+	case "md5sum":
+		return "md5"
+	}
+	return a
 }
 
 // New returns a Client with sensible defaults.
@@ -80,24 +142,36 @@ func New() *Client {
 func (c *Client) FetchBytes(url string) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt <= c.Retries; attempt++ {
-		resp, err := c.HTTP.Get(url) // #nosec G107 – URL comes from user config
+		if attempt > 0 {
+			time.Sleep(retryDelay(attempt))
+		}
+		req, err := c.newRequest(url)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.HTTP.Do(req)
 		if err != nil {
 			lastErr = err
 			continue
 		}
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			return nil, fmt.Errorf("HTTP %d fetching %s", resp.StatusCode, url)
+			_ = resp.Body.Close()
+			lastErr = httpStatusError(resp.StatusCode, url)
+			if errors.As(lastErr, new(permanentError)) {
+				return nil, lastErr
+			}
+			continue
 		}
 		reader := &transferReader{
 			r:          resp.Body,
 			url:        url,
+			lim:        c.limiter,
 			lastReport: time.Now(),
 			nextReport: time.Now().Add(transferActivityInterval),
 			total:      resp.ContentLength,
 		}
 		data, err := io.ReadAll(reader)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			lastErr = err
 			continue
@@ -116,6 +190,7 @@ func (c *Client) DownloadFile(url, destPath, algo, expected string) error {
 // Skips the download if the file already exists with a matching checksum.
 // In dry-run mode the directory is created but no download occurs.
 func (c *Client) DownloadFileP(url, destPath, algo, expected string, prog *Counter) error {
+	algo = NormalizeAlgo(algo)
 	if c.DryRun {
 		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", filepath.Dir(destPath), err)
@@ -150,6 +225,9 @@ func (c *Client) DownloadFileP(url, destPath, algo, expected string, prog *Count
 
 	var lastErr error
 	for attempt := 0; attempt <= c.Retries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(retryDelay(attempt))
+		}
 		if err := c.downloadOnce(url, destPath, algo, expected, prog); err != nil {
 			lastErr = err
 			if errors.As(err, new(permanentError)) {
@@ -165,7 +243,7 @@ func (c *Client) DownloadFileP(url, destPath, algo, expected string, prog *Count
 func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counter) error { //nolint:gocyclo
 	writePath := destPath
 	if useTempWritePath(destPath) {
-		writePath = destPath + ".repomirror.part"
+		writePath = destPath + PartSuffix
 	}
 
 	// Support resuming: check existing partial file size.
@@ -183,7 +261,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 		log.Printf("[dl] warning: could not write resume marker for %s: %v", shortURLForLog(url), err)
 	}
 
-	req, err := http.NewRequest(http.MethodGet, url, nil) // #nosec G107
+	req, err := c.newRequest(url)
 	if err != nil {
 		return err
 	}
@@ -208,25 +286,23 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	case http.StatusPartialContent:
 		// Server honours range; we can append.
 	case http.StatusRequestedRangeNotSatisfiable:
-		// File is already complete on disk. Verify checksum if we have one.
+		if startByte == 0 {
+			return httpStatusError(resp.StatusCode, url)
+		}
 		if expected != "" {
 			ok, checkErr := checksumMatchP(writePath, algo, expected, prog)
 			if checkErr != nil {
 				return checkErr
 			}
 			if !ok {
-				// Corrupt; delete and retry from scratch.
-				os.Remove(writePath) //nolint:errcheck
+				os.Remove(writePath)             //nolint:errcheck
+				_ = clearResumeMarker(writePath) //nolint:errcheck
 				return c.downloadOnce(url, destPath, algo, expected, prog)
 			}
 		}
-		return nil
+		return finalizeDownload(writePath, destPath, algo, expected)
 	default:
-		httpErr := fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-			return permanentError{httpErr}
-		}
-		return httpErr
+		return httpStatusError(resp.StatusCode, url)
 	}
 
 	flag := os.O_CREATE | os.O_WRONLY
@@ -267,7 +343,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 			_ = resp.Body.Close() //nolint:errcheck
 			writePath = destPath
 			startByte = 0
-			req, reqErr := http.NewRequest(http.MethodGet, url, nil) // #nosec G107
+			req, reqErr := c.newRequest(url)
 			if reqErr != nil {
 				return reqErr
 			}
@@ -277,11 +353,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 			}
 			if resp2.StatusCode != http.StatusOK {
 				_ = resp2.Body.Close() //nolint:errcheck
-				err2 := fmt.Errorf("HTTP %d for %s", resp2.StatusCode, url)
-				if resp2.StatusCode >= 400 && resp2.StatusCode < 500 {
-					return permanentError{err2}
-				}
-				return err2
+				return httpStatusError(resp2.StatusCode, url)
 			}
 			resp = resp2
 			f, err = openFileWithRetry(writePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
@@ -293,7 +365,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 			return err
 		}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var total int64 = -1
 	if resp.ContentLength >= 0 {
@@ -302,6 +374,7 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	src := &transferReader{
 		r:           resp.Body,
 		c:           prog,
+		lim:         c.limiter,
 		url:         url,
 		display:     shortURLForLog(url),
 		lastReport:  time.Now(),
@@ -333,13 +406,17 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 			return err
 		}
 		if !ok {
-			os.Remove(writePath)
+			_ = os.Remove(writePath)
 			_ = clearChecksumCache(destPath) //nolint:errcheck
 			_ = clearResumeMarker(writePath) //nolint:errcheck
 			return fmt.Errorf("checksum mismatch for %s", writePath)
 		}
 	}
 
+	return finalizeDownload(writePath, destPath, algo, expected)
+}
+
+func finalizeDownload(writePath, destPath, algo, expected string) error {
 	if writePath != destPath {
 		_ = os.Remove(destPath) //nolint:errcheck
 		if err := os.Rename(writePath, destPath); err != nil {
@@ -355,6 +432,88 @@ func (c *Client) downloadOnce(url, destPath, algo, expected string, prog *Counte
 	_ = clearResumeMarker(writePath) //nolint:errcheck
 	_ = clearResumeMarker(destPath)  //nolint:errcheck
 	return nil
+}
+
+// FileMatches reports whether path exists and has the expected checksum.
+func FileMatches(path, algo, expected string) bool {
+	algo = NormalizeAlgo(algo)
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || expected == "" {
+		return false
+	}
+	if checksumCacheHit(path, algo, expected, info) {
+		return true
+	}
+	ok, _ := checksumMatchP(path, algo, expected, nil) //nolint:errcheck
+	if ok {
+		_ = writeChecksumCache(path, algo, expected, info) //nolint:errcheck
+	}
+	return ok
+}
+
+// BytesMatch reports whether data has the expected checksum.
+func BytesMatch(data []byte, algo, expected string) bool {
+	h, err := newHash(NormalizeAlgo(algo))
+	if err != nil {
+		return false
+	}
+	h.Write(data)
+	return strings.EqualFold(hex.EncodeToString(h.Sum(nil)), strings.TrimSpace(expected))
+}
+
+// ForgetPath drops any cached checksum or resume state recorded for path.
+func ForgetPath(path string) {
+	_ = clearChecksumCache(path) //nolint:errcheck
+	_ = clearResumeMarker(path)  //nolint:errcheck
+}
+
+// MovePath renames src to dst and moves its cached checksum state with it.
+func MovePath(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return err
+	}
+	ForgetPath(src)
+	ForgetPath(dst)
+	return nil
+}
+
+// WriteFileAtomic writes data to path via a temporary file and rename.
+func WriteFileAtomic(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + TempSuffix
+	if err := os.WriteFile(tmp, data, 0o644); err != nil { //nolint:gosec
+		_ = os.Remove(tmp) //nolint:errcheck
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp) //nolint:errcheck
+		return err
+	}
+	ForgetPath(path)
+	return nil
+}
+
+// Temporary file suffixes written by repomirror. Files ending in any of
+// these are never part of a finished mirror.
+const (
+	PartSuffix  = ".repomirror.part"
+	TempSuffix  = ".repomirror.tmp"
+	StageSuffix = ".repomirror.new"
+)
+
+// IsTempFile reports whether path is a repomirror temporary file.
+func IsTempFile(path string) bool {
+	for _, s := range []string{PartSuffix, TempSuffix, StageSuffix} {
+		if strings.HasSuffix(path, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // SafeJoin joins root+relativePath and rejects any traversal outside root.
@@ -386,10 +545,10 @@ func checksumMatchP(path, algo, expected string, prog *Counter) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var total int64 = -1
-	if info, err := f.Stat(); err == nil {
+	if info, statErr := f.Stat(); statErr == nil {
 		total = info.Size()
 	}
 	display := filepath.Base(path)
@@ -404,18 +563,9 @@ func checksumMatchP(path, algo, expected string, prog *Counter) (bool, error) {
 		defer prog.ClearActiveProgress(display)
 	}
 
-	var h hash.Hash
-	switch strings.ToLower(algo) {
-	case "sha256":
-		h = sha256.New()
-	case "sha512":
-		h = sha512.New()
-	case "sha1":
-		h = sha1.New() // #nosec G401 – used only for legacy repo metadata verification
-	case "md5":
-		h = md5.New() // #nosec G401 – used only for legacy repo metadata verification
-	default:
-		return false, fmt.Errorf("unknown checksum algorithm: %s", algo)
+	h, err := newHash(NormalizeAlgo(algo))
+	if err != nil {
+		return false, err
 	}
 
 	reader := io.Reader(f)
@@ -431,6 +581,24 @@ func checksumMatchP(path, algo, expected string, prog *Counter) (bool, error) {
 	}
 	actual := hex.EncodeToString(h.Sum(nil))
 	return strings.EqualFold(actual, expected), nil
+}
+
+func newHash(algo string) (hash.Hash, error) {
+	switch algo {
+	case "sha256":
+		return sha256.New(), nil
+	case "sha224":
+		return sha256.New224(), nil
+	case "sha384":
+		return sha512.New384(), nil
+	case "sha512":
+		return sha512.New(), nil
+	case "sha1":
+		return sha1.New(), nil // #nosec G401 – used only for legacy repo metadata verification
+	case "md5":
+		return md5.New(), nil // #nosec G401 – used only for legacy repo metadata verification
+	}
+	return nil, fmt.Errorf("unknown checksum algorithm: %s", algo)
 }
 
 type hashProgressReader struct {
@@ -528,6 +696,7 @@ func writeChecksumCache(path, algo, expected string, info os.FileInfo) error {
 type transferReader struct {
 	r           io.Reader
 	c           *Counter
+	lim         *rate.Limiter
 	url         string
 	display     string
 	transferred int64
@@ -539,6 +708,9 @@ type transferReader struct {
 func (tr *transferReader) Read(p []byte) (int, error) {
 	n, err := tr.r.Read(p)
 	if n > 0 {
+		if tr.lim != nil {
+			waitForTokens(tr.lim, n)
+		}
 		tr.transferred += int64(n)
 		if tr.c != nil {
 			tr.c.AddBytes(int64(n))

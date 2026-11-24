@@ -13,6 +13,14 @@ import (
 	"github.com/ulikunitz/xz"
 )
 
+const (
+	extGz   = ".gz"
+	extXz   = ".xz"
+	extBz2  = ".bz2"
+	extZst  = ".zst"
+	extZstd = ".zstd"
+)
+
 var (
 	gzipMagic = []byte{0x1f, 0x8b}
 	xzMagic   = []byte{0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00}
@@ -21,8 +29,8 @@ var (
 )
 
 // openPossiblyCompressed opens a file for reading, transparently decompressing
-// gzip (.gz) or xz (.xz) files. Returns a reader, a cleanup function, and any error.
-func openPossiblyCompressed(path string) (io.Reader, func(), error) {
+// it based on its magic bytes or the extension ext (.gz, .xz, .bz2, .zst). Returns a reader, a cleanup function, and any error.
+func openPossiblyCompressed(path, ext string) (io.Reader, func(), error) {
 	f, err := os.Open(path) // #nosec G304 – path derived from config
 	if err != nil {
 		return nil, nil, err
@@ -30,34 +38,34 @@ func openPossiblyCompressed(path string) (io.Reader, func(), error) {
 
 	br := bufio.NewReader(f)
 	peek, _ := br.Peek(8) //nolint:errcheck
-	lower := strings.ToLower(path)
+	lower := strings.ToLower(ext)
 	switch {
-	case bytes.HasPrefix(peek, gzipMagic) || strings.HasSuffix(lower, ".gz"):
+	case bytes.HasPrefix(peek, gzipMagic) || strings.HasSuffix(lower, extGz):
 		gz, err := gzip.NewReader(br)
 		if err != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, nil, err
 		}
-		return gz, func() { gz.Close(); f.Close() }, nil
-	case bytes.HasPrefix(peek, xzMagic) || strings.HasSuffix(lower, ".xz"):
+		return gz, func() { _ = gz.Close(); _ = f.Close() }, nil
+	case bytes.HasPrefix(peek, xzMagic) || strings.HasSuffix(lower, extXz):
 		xzr, err := xz.NewReader(br)
 		if err != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, nil, err
 		}
-		return xzr, func() { f.Close() }, nil
-	case bytes.HasPrefix(peek, bz2Magic) || strings.HasSuffix(lower, ".bz2"):
-		return bzip2.NewReader(br), func() { f.Close() }, nil
-	case bytes.HasPrefix(peek, zstdMagic) || strings.HasSuffix(lower, ".zst") || strings.HasSuffix(lower, ".zstd"):
+		return xzr, func() { _ = f.Close() }, nil
+	case bytes.HasPrefix(peek, bz2Magic) || strings.HasSuffix(lower, extBz2):
+		return bzip2.NewReader(br), func() { _ = f.Close() }, nil
+	case bytes.HasPrefix(peek, zstdMagic) || strings.HasSuffix(lower, extZst) || strings.HasSuffix(lower, extZstd):
 		zr, err := zstd.NewReader(br)
 		if err != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, nil, err
 		}
-		return zr, func() { zr.Close(); f.Close() }, nil
+		return zr, func() { zr.Close(); _ = f.Close() }, nil
 	}
 
-	return br, func() { f.Close() }, nil
+	return br, func() { _ = f.Close() }, nil
 }
 
 // openPossiblyCompressedBytes opens an in-memory byte slice for reading,
@@ -67,21 +75,21 @@ func openPossiblyCompressedBytes(data []byte, ext string) (io.Reader, func(), er
 	peekLen := min(8, len(data))
 	peek := data[:peekLen]
 	switch strings.ToLower(ext) {
-	case ".gz":
+	case extGz:
 		gz, err := gzip.NewReader(r)
 		if err != nil {
 			return nil, nil, err
 		}
-		return gz, func() { gz.Close() }, nil
-	case ".xz":
+		return gz, func() { _ = gz.Close() }, nil
+	case extXz:
 		xzr, err := xz.NewReader(r)
 		if err != nil {
 			return nil, nil, err
 		}
 		return xzr, func() {}, nil
-	case ".bz2":
+	case extBz2:
 		return bzip2.NewReader(r), func() {}, nil
-	case ".zst", ".zstd":
+	case extZst, extZstd:
 		zr, err := zstd.NewReader(r)
 		if err != nil {
 			return nil, nil, err
@@ -96,7 +104,7 @@ func openPossiblyCompressedBytes(data []byte, ext string) (io.Reader, func(), er
 		if err != nil {
 			return nil, nil, err
 		}
-		return gz, func() { gz.Close() }, nil
+		return gz, func() { _ = gz.Close() }, nil
 	case bytes.HasPrefix(peek, xzMagic):
 		xzr, err := xz.NewReader(bytes.NewReader(data))
 		if err != nil {

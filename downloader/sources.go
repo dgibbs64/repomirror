@@ -3,6 +3,8 @@ package downloader
 import (
 	"encoding/xml"
 	"fmt"
+	"log"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -120,10 +122,20 @@ func ResolveSourceURLs(primaryURL, mirrorlistURL, metalinkURL, preferred, repoTy
 
 	add(primaryURL)
 
+	optional := func(what string, err error) error {
+		if len(sources) == 0 {
+			return fmt.Errorf("%s: %w", what, err)
+		}
+		log.Printf("[%s] warning: %s failed, continuing with other sources: %v", strings.ToLower(repoType), what, err)
+		return nil
+	}
+
 	if mirrorlistURL != "" {
 		data, err := dl.FetchBytes(mirrorlistURL)
 		if err != nil {
-			return nil, fmt.Errorf("fetch mirrorlist: %w", err)
+			if optErr := optional("fetch mirrorlist", err); optErr != nil {
+				return nil, optErr
+			}
 		}
 		for _, line := range strings.Split(string(data), "\n") {
 			line = strings.TrimSpace(line)
@@ -137,7 +149,9 @@ func ResolveSourceURLs(primaryURL, mirrorlistURL, metalinkURL, preferred, repoTy
 	if metalinkURL != "" {
 		data, err := dl.FetchBytes(metalinkURL)
 		if err != nil {
-			return nil, fmt.Errorf("fetch metalink: %w", err)
+			if optErr := optional("fetch metalink", err); optErr != nil {
+				return nil, optErr
+			}
 		}
 		var ml struct {
 			URLs []struct {
@@ -145,15 +159,19 @@ func ResolveSourceURLs(primaryURL, mirrorlistURL, metalinkURL, preferred, repoTy
 				Value    string `xml:",chardata"`
 			} `xml:"files>file>resources>url"`
 		}
-		if err := xml.Unmarshal(data, &ml); err != nil {
-			return nil, fmt.Errorf("parse metalink: %w", err)
+		if len(data) > 0 {
+			if xmlErr := xml.Unmarshal(data, &ml); xmlErr != nil {
+				if optErr := optional("parse metalink", xmlErr); optErr != nil {
+					return nil, optErr
+				}
+			}
 		}
 		for _, u := range ml.URLs {
 			p := strings.ToLower(strings.TrimSpace(u.Protocol))
 			if p != "" && p != "http" && p != "https" {
 				continue
 			}
-			add(u.Value)
+			add(metalinkBaseURL(u.Value))
 		}
 	}
 
@@ -178,4 +196,54 @@ func ResolveSourceURLs(primaryURL, mirrorlistURL, metalinkURL, preferred, repoTy
 	}
 
 	return sources, nil
+}
+
+// Staged is a file downloaded beside its final path, waiting to be moved into
+// place once the rest of the repository is complete.
+type Staged struct {
+	Tmp  string
+	Dest string
+}
+
+// Publish moves the staged file to its final path.
+func (s Staged) Publish() error { return MovePath(s.Tmp, s.Dest) }
+
+// StageFromSources makes sure an up-to-date copy of a file is available
+// without touching dest. When dest already has the expected checksum it is
+// returned as is with a nil Staged. Otherwise the file is downloaded to a
+// staging path (trying each relative path in rels in order) and that path is
+// returned. Files without a checksum are always fetched again.
+func StageFromSources(dl *Client, ss *SourceSet, rels []string, dest, algo, sum string) (string, *Staged, error) {
+	if sum != "" && FileMatches(dest, algo, sum) {
+		return dest, nil, nil
+	}
+	tmp := dest + StageSuffix
+	if sum == "" {
+		_ = os.Remove(tmp) //nolint:errcheck
+		ForgetPath(tmp)
+	}
+	var lastErr error
+	for _, rel := range rels {
+		if err := DownloadFileFromSources(dl, ss, rel, tmp, algo, sum, nil); err != nil {
+			lastErr = err
+			continue
+		}
+		return tmp, &Staged{Tmp: tmp, Dest: dest}, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no source path for %s", dest)
+	}
+	return "", nil, lastErr
+}
+
+// metalinkBaseURL turns a metalink file URL, which points at the repository
+// index file, into the repository base URL.
+func metalinkBaseURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	for _, suffix := range []string{"/repodata/repomd.xml", "/InRelease", "/Release"} {
+		if strings.HasSuffix(raw, suffix) {
+			return strings.TrimSuffix(raw, suffix)
+		}
+	}
+	return raw
 }

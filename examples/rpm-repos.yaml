@@ -1,24 +1,50 @@
-# RPM repository snippets for mirrors.yaml
-# Copy the entries you need into the rpm_repos section of your mirrors.yaml.
+# RPM repository snippets for mirrors.yml
+# Copy the entries you need into the rpm_repos section of your mirrors.yml.
 # All examples are for x86_64. Adjust the path/base_url for other arches (e.g. aarch64).
 # Add 'enable: false' under any repo to skip it temporarily during testing.
 # Not all third-party YUM repos publish official mirrorlist/metalink endpoints.
 
 rpm_repos:
   # ---------------------------------------------------------------------------
-  # Source failover example (base_url + mirrorlist + metalink)
-  # Keep base_url as your preferred pinned mirror, and use mirrorlist/metalink
-  # as fallback sources. preferred_mirror biases ordering when multiple sources
-  # are available.
+  # Source failover example (base_url + mirrorlist)
+  # Keep base_url as your preferred pinned mirror, and use mirrorlist as a
+  # fallback source. preferred_mirror biases ordering when multiple sources
+  # are available. Disabled because it duplicates epel-10 below.
   # ---------------------------------------------------------------------------
-  - name: epel-9-failover-example
+  - name: epel-10-failover-example
+    enable: false
+    path: epel/10/Everything/x86_64
+    base_url: https://dl.fedoraproject.org/pub/epel/10/Everything/x86_64/
+    mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=epel-10&arch=x86_64
+    preferred_mirror: dl.fedoraproject.org
+    gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-10
+
+  # ---------------------------------------------------------------------------
+  # CentOS Stream 10
+  # ---------------------------------------------------------------------------
+  - name: centos-10stream-baseos
     enable: true
-    path: epel/9/Everything/x86_64
-    base_url: https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/
-    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=epel-9&arch=x86_64
-    # metalink: https://mirrors.fedoraproject.org/metalink?repo=epel-9&arch=x86_64
-    # preferred_mirror: dl.fedoraproject.org
-    gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
+    path: centos/10-stream/BaseOS/x86_64/os
+    base_url: https://mirror.stream.centos.org/10-stream/BaseOS/x86_64/os/
+    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+
+  - name: centos-10stream-appstream
+    enable: true
+    path: centos/10-stream/AppStream/x86_64/os
+    base_url: https://mirror.stream.centos.org/10-stream/AppStream/x86_64/os/
+    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+
+  - name: centos-10stream-crb
+    enable: true
+    path: centos/10-stream/CRB/x86_64/os
+    base_url: https://mirror.stream.centos.org/10-stream/CRB/x86_64/os/
+    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+
+  - name: centos-10stream-extras
+    enable: true
+    path: centos/10-stream/extras/x86_64/os
+    base_url: https://mirror.stream.centos.org/SIGs/10-stream/extras/x86_64/extras-common/
+    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-SIG-Extras
 
   # ---------------------------------------------------------------------------
   # CentOS Stream 9
@@ -45,28 +71,34 @@ rpm_repos:
     enable: true
     path: centos/9-stream/extras/x86_64/os
     base_url: https://mirror.stream.centos.org/SIGs/9-stream/extras/x86_64/extras-common/
-    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-SIG-Extras
 
   # ---------------------------------------------------------------------------
-  # CentOS Stream 10
+  # Rocky Linux 10
   # ---------------------------------------------------------------------------
-  - name: centos-10stream-baseos
+  - name: rocky-10-baseos
     enable: true
-    path: centos/10-stream/BaseOS/x86_64/os
-    base_url: https://mirror.stream.centos.org/10-stream/BaseOS/x86_64/os/
-    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+    path: rocky/10/BaseOS/x86_64/os
+    base_url: https://dl.rockylinux.org/pub/rocky/10/BaseOS/x86_64/os/
+    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-10
 
-  - name: centos-10stream-appstream
+  - name: rocky-10-appstream
     enable: true
-    path: centos/10-stream/AppStream/x86_64/os
-    base_url: https://mirror.stream.centos.org/10-stream/AppStream/x86_64/os/
-    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+    path: rocky/10/AppStream/x86_64/os
+    base_url: https://dl.rockylinux.org/pub/rocky/10/AppStream/x86_64/os/
+    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-10
 
-  - name: centos-10stream-crb
+  - name: rocky-10-crb
     enable: true
-    path: centos/10-stream/CRB/x86_64/os
-    base_url: https://mirror.stream.centos.org/10-stream/CRB/x86_64/os/
-    gpg_key: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+    path: rocky/10/CRB/x86_64/os
+    base_url: https://dl.rockylinux.org/pub/rocky/10/CRB/x86_64/os/
+    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-10
+
+  - name: rocky-10-extras
+    enable: true
+    path: rocky/10/extras/x86_64/os
+    base_url: https://dl.rockylinux.org/pub/rocky/10/extras/x86_64/os/
+    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-10
 
   # ---------------------------------------------------------------------------
   # Rocky Linux 9
@@ -111,31 +143,31 @@ rpm_repos:
     gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-8
 
   # ---------------------------------------------------------------------------
-  # Rocky Linux 10
+  # AlmaLinux 10
   # ---------------------------------------------------------------------------
-  - name: rocky-10-baseos
+  - name: almalinux-10-baseos
     enable: true
-    path: rocky/10/BaseOS/x86_64/os
-    base_url: https://dl.rockylinux.org/pub/rocky/10/BaseOS/x86_64/os/
-    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-10
+    path: almalinux/10/BaseOS/x86_64/os
+    base_url: https://repo.almalinux.org/almalinux/10/BaseOS/x86_64/os/
+    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-10
 
-  - name: rocky-10-appstream
+  - name: almalinux-10-appstream
     enable: true
-    path: rocky/10/AppStream/x86_64/os
-    base_url: https://dl.rockylinux.org/pub/rocky/10/AppStream/x86_64/os/
-    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-10
+    path: almalinux/10/AppStream/x86_64/os
+    base_url: https://repo.almalinux.org/almalinux/10/AppStream/x86_64/os/
+    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-10
 
-  - name: rocky-10-crb
+  - name: almalinux-10-crb
     enable: true
-    path: rocky/10/CRB/x86_64/os
-    base_url: https://dl.rockylinux.org/pub/rocky/10/CRB/x86_64/os/
-    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-10
+    path: almalinux/10/CRB/x86_64/os
+    base_url: https://repo.almalinux.org/almalinux/10/CRB/x86_64/os/
+    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-10
 
-  - name: rocky-10-extras
+  - name: almalinux-10-extras
     enable: true
-    path: rocky/10/extras/x86_64/os
-    base_url: https://dl.rockylinux.org/pub/rocky/10/extras/x86_64/os/
-    gpg_key: https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-10
+    path: almalinux/10/extras/x86_64/os
+    base_url: https://repo.almalinux.org/almalinux/10/extras/x86_64/os/
+    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-10
 
   # ---------------------------------------------------------------------------
   # AlmaLinux 9
@@ -158,6 +190,12 @@ rpm_repos:
     base_url: https://repo.almalinux.org/almalinux/9/CRB/x86_64/os/
     gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-9
 
+  - name: almalinux-9-extras
+    enable: true
+    path: almalinux/9/extras/x86_64/os
+    base_url: https://repo.almalinux.org/almalinux/9/extras/x86_64/os/
+    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-9
+
   # ---------------------------------------------------------------------------
   # AlmaLinux 8
   # ---------------------------------------------------------------------------
@@ -174,56 +212,59 @@ rpm_repos:
     gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux
 
   # ---------------------------------------------------------------------------
-  # AlmaLinux 10
+  # Fedora 45
   # ---------------------------------------------------------------------------
-  - name: almalinux-10-baseos
+  - name: fedora-45-everything
     enable: true
-    path: almalinux/10/BaseOS/x86_64/os
-    base_url: https://repo.almalinux.org/almalinux/10/BaseOS/x86_64/os/
-    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-10
-
-  - name: almalinux-10-appstream
-    enable: true
-    path: almalinux/10/AppStream/x86_64/os
-    base_url: https://repo.almalinux.org/almalinux/10/AppStream/x86_64/os/
-    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-10
-
-  - name: almalinux-10-crb
-    enable: true
-    path: almalinux/10/CRB/x86_64/os
-    base_url: https://repo.almalinux.org/almalinux/10/CRB/x86_64/os/
-    gpg_key: https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-10
-
-  # ---------------------------------------------------------------------------
-  # Fedora 42
-  # ---------------------------------------------------------------------------
-  - name: fedora-42-everything
-    enable: true
-    path: fedora/releases/42/Everything/x86_64/os
-    base_url: https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Everything/x86_64/os/
-    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=fedora-42&arch=x86_64
-    # metalink: https://mirrors.fedoraproject.org/metalink?repo=fedora-42&arch=x86_64
+    path: fedora/releases/45/Everything/x86_64/os
+    base_url: https://dl.fedoraproject.org/pub/fedora/linux/releases/45/Everything/x86_64/os/
+    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=fedora-45&arch=x86_64
     # preferred_mirror: dl.fedoraproject.org
-    gpg_key: https://getfedora.org/static/keys/RPM-GPG-KEY-fedora-42-primary
+    gpg_key: https://src.fedoraproject.org/rpms/fedora-repos/raw/rawhide/f/RPM-GPG-KEY-fedora-45-primary
 
-  - name: fedora-42-updates
+  - name: fedora-45-updates
     enable: true
-    path: fedora/updates/42/Everything/x86_64
-    base_url: https://dl.fedoraproject.org/pub/fedora/linux/updates/42/Everything/x86_64/
-    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=updates-released-f42&arch=x86_64
-    # metalink: https://mirrors.fedoraproject.org/metalink?repo=updates-released-f42&arch=x86_64
+    path: fedora/updates/45/Everything/x86_64
+    base_url: https://dl.fedoraproject.org/pub/fedora/linux/updates/45/Everything/x86_64/
+    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=updates-released-f45&arch=x86_64
     # preferred_mirror: dl.fedoraproject.org
-    gpg_key: https://getfedora.org/static/keys/RPM-GPG-KEY-fedora-42-primary
+    gpg_key: https://src.fedoraproject.org/rpms/fedora-repos/raw/rawhide/f/RPM-GPG-KEY-fedora-45-primary
+
+  # ---------------------------------------------------------------------------
+  # Fedora 44
+  # ---------------------------------------------------------------------------
+  - name: fedora-44-everything
+    enable: true
+    path: fedora/releases/44/Everything/x86_64/os
+    base_url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/x86_64/os/
+    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=fedora-44&arch=x86_64
+    # preferred_mirror: dl.fedoraproject.org
+    gpg_key: https://src.fedoraproject.org/rpms/fedora-repos/raw/rawhide/f/RPM-GPG-KEY-fedora-44-primary
+
+  - name: fedora-44-updates
+    enable: true
+    path: fedora/updates/44/Everything/x86_64
+    base_url: https://dl.fedoraproject.org/pub/fedora/linux/updates/44/Everything/x86_64/
+    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=updates-released-f44&arch=x86_64
+    # preferred_mirror: dl.fedoraproject.org
+    gpg_key: https://src.fedoraproject.org/rpms/fedora-repos/raw/rawhide/f/RPM-GPG-KEY-fedora-44-primary
 
   # ---------------------------------------------------------------------------
   # EPEL (Extra Packages for Enterprise Linux)
   # ---------------------------------------------------------------------------
+  - name: epel-10
+    enable: true
+    path: epel/10/Everything/x86_64
+    base_url: https://dl.fedoraproject.org/pub/epel/10/Everything/x86_64/
+    # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=epel-10&arch=x86_64
+    # preferred_mirror: dl.fedoraproject.org
+    gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-10
+
   - name: epel-9
     enable: true
     path: epel/9/Everything/x86_64
     base_url: https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/
     # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=epel-9&arch=x86_64
-    # metalink: https://mirrors.fedoraproject.org/metalink?repo=epel-9&arch=x86_64
     # preferred_mirror: dl.fedoraproject.org
     gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
 
@@ -232,65 +273,100 @@ rpm_repos:
     path: epel/8/Everything/x86_64
     base_url: https://dl.fedoraproject.org/pub/epel/8/Everything/x86_64/
     # mirrorlist: https://mirrors.fedoraproject.org/mirrorlist?repo=epel-8&arch=x86_64
-    # metalink: https://mirrors.fedoraproject.org/metalink?repo=epel-8&arch=x86_64
     # preferred_mirror: dl.fedoraproject.org
     gpg_key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-8
 
   # ---------------------------------------------------------------------------
   # Zabbix
   # ---------------------------------------------------------------------------
+  - name: zabbix-80-rhel10
+    enable: true
+    path: zabbix/8.0/stable/rhel/10/x86_64
+    base_url: https://repo.zabbix.com/zabbix/8.0/stable/rhel/10/x86_64/
+    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-B5333005
+
+  - name: zabbix-80-rhel9
+    enable: true
+    path: zabbix/8.0/stable/rhel/9/x86_64
+    base_url: https://repo.zabbix.com/zabbix/8.0/stable/rhel/9/x86_64/
+    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-B5333005
+
+  - name: zabbix-70-rhel10
+    enable: true
+    path: zabbix/7.0/rhel/10/x86_64
+    base_url: https://repo.zabbix.com/zabbix/7.0/rhel/10/x86_64/
+    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-B5333005
+
   - name: zabbix-70-rhel9
     enable: true
     path: zabbix/7.0/rhel/9/x86_64
     base_url: https://repo.zabbix.com/zabbix/7.0/rhel/9/x86_64/
-    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-A14FE591
-
-  - name: zabbix-60-rhel9
-    enable: true
-    path: zabbix/6.0/rhel/9/x86_64
-    base_url: https://repo.zabbix.com/zabbix/6.0/rhel/9/x86_64/
-    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-A14FE591
+    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-B5333005
 
   - name: zabbix-70-rhel8
     enable: true
     path: zabbix/7.0/rhel/8/x86_64
     base_url: https://repo.zabbix.com/zabbix/7.0/rhel/8/x86_64/
-    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-A14FE591
+    gpg_key: https://repo.zabbix.com/RPM-GPG-KEY-ZABBIX-B5333005
 
   # ---------------------------------------------------------------------------
   # PostgreSQL
   # ---------------------------------------------------------------------------
+  - name: postgresql-18-rhel10
+    enable: true
+    path: postgresql/18/redhat/rhel-10-x86_64
+    base_url: https://download.postgresql.org/pub/repos/yum/18/redhat/rhel-10-x86_64/
+    gpg_key: https://download.postgresql.org/pub/repos/yum/keys/PGDG-RPM-GPG-KEY-RHEL
+
+  - name: postgresql-18-rhel9
+    enable: true
+    path: postgresql/18/redhat/rhel-9-x86_64
+    base_url: https://download.postgresql.org/pub/repos/yum/18/redhat/rhel-9-x86_64/
+    gpg_key: https://download.postgresql.org/pub/repos/yum/keys/PGDG-RPM-GPG-KEY-RHEL
+
   - name: postgresql-17-rhel9
     enable: true
     path: postgresql/17/redhat/rhel-9-x86_64
     base_url: https://download.postgresql.org/pub/repos/yum/17/redhat/rhel-9-x86_64/
-    gpg_key: https://yum.postgresql.org/keys/PGDG-RPM-GPG-KEY-RHEL
+    gpg_key: https://download.postgresql.org/pub/repos/yum/keys/PGDG-RPM-GPG-KEY-RHEL
 
-  - name: postgresql-16-rhel9
+  - name: postgresql-17-rhel8
     enable: true
-    path: postgresql/16/redhat/rhel-9-x86_64
-    base_url: https://download.postgresql.org/pub/repos/yum/16/redhat/rhel-9-x86_64/
-    gpg_key: https://yum.postgresql.org/keys/PGDG-RPM-GPG-KEY-RHEL
-
-  - name: postgresql-16-rhel8
-    enable: true
-    path: postgresql/16/redhat/rhel-8-x86_64
-    base_url: https://download.postgresql.org/pub/repos/yum/16/redhat/rhel-8-x86_64/
-    gpg_key: https://yum.postgresql.org/keys/PGDG-RPM-GPG-KEY-RHEL
+    path: postgresql/17/redhat/rhel-8-x86_64
+    base_url: https://download.postgresql.org/pub/repos/yum/17/redhat/rhel-8-x86_64/
+    gpg_key: https://download.postgresql.org/pub/repos/yum/keys/PGDG-RPM-GPG-KEY-RHEL
 
   # ---------------------------------------------------------------------------
-  # MySQL 8.0 (Community)
+  # MySQL 8.4 LTS (Community)
   # ---------------------------------------------------------------------------
-  - name: mysql-80-rhel9
+  - name: mysql-84-rhel10
     enable: true
-    path: mysql/8.0/rhel/9/x86_64
-    base_url: https://repo.mysql.com/yum/mysql-8.0-community/el/9/x86_64/
-    gpg_key: https://repo.mysql.com/RPM-GPG-KEY-mysql-2023
+    path: mysql/8.4/el/10/x86_64
+    base_url: https://repo.mysql.com/yum/mysql-8.4-community/el/10/x86_64/
+    gpg_key: https://repo.mysql.com/RPM-GPG-KEY-mysql-2025
+
+  - name: mysql-84-rhel9
+    enable: true
+    path: mysql/8.4/el/9/x86_64
+    base_url: https://repo.mysql.com/yum/mysql-8.4-community/el/9/x86_64/
+    gpg_key: https://repo.mysql.com/RPM-GPG-KEY-mysql-2025
 
   # ---------------------------------------------------------------------------
   # Docker CE
   # ---------------------------------------------------------------------------
+  - name: docker-ce-rhel10
+    enable: true
+    path: docker/linux/rhel/10/x86_64/stable
+    base_url: https://download.docker.com/linux/rhel/10/x86_64/stable/
+    gpg_key: https://download.docker.com/linux/rhel/gpg
+
   - name: docker-ce-rhel9
+    enable: true
+    path: docker/linux/rhel/9/x86_64/stable
+    base_url: https://download.docker.com/linux/rhel/9/x86_64/stable/
+    gpg_key: https://download.docker.com/linux/rhel/gpg
+
+  - name: docker-ce-centos9
     enable: true
     path: docker/linux/centos/9/x86_64/stable
     base_url: https://download.docker.com/linux/centos/9/x86_64/stable/
@@ -299,11 +375,24 @@ rpm_repos:
   # ---------------------------------------------------------------------------
   # Elasticsearch / OpenSearch
   # ---------------------------------------------------------------------------
+  - name: elasticsearch-9
+    enable: true
+    verify_signatures: false
+    path: elasticsearch/9.x/yum
+    base_url: https://artifacts.elastic.co/packages/9.x/yum/
+    gpg_key: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+
   - name: elasticsearch-8
     enable: true
     path: elasticsearch/8.x/yum
     base_url: https://artifacts.elastic.co/packages/8.x/yum/
     gpg_key: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+
+  - name: opensearch-3
+    enable: true
+    path: opensearch/3.x/yum
+    base_url: https://artifacts.opensearch.org/releases/bundle/opensearch/3.x/yum/
+    gpg_key: https://artifacts.opensearch.org/publickeys/opensearch-release.pgp
 
   - name: opensearch-2
     enable: true
@@ -315,6 +404,12 @@ rpm_repos:
   # Microsoft (VS Code, .NET, Azure CLI, PowerShell)
   # One repo contains all Microsoft Linux packages.
   # ---------------------------------------------------------------------------
+  - name: microsoft-prod-rhel10
+    enable: true
+    path: microsoft/rhel/10/prod
+    base_url: https://packages.microsoft.com/rhel/10/prod/
+    gpg_key: https://packages.microsoft.com/keys/microsoft-2025.asc
+
   - name: microsoft-prod-rhel9
     enable: true
     path: microsoft/rhel/9/prod
@@ -330,6 +425,12 @@ rpm_repos:
   # ---------------------------------------------------------------------------
   # HashiCorp (Terraform, Vault, Consul, Packer, Nomad)
   # ---------------------------------------------------------------------------
+  - name: hashicorp-rhel10
+    enable: true
+    path: hashicorp/rhel/10/x86_64/stable
+    base_url: https://rpm.releases.hashicorp.com/RHEL/10/x86_64/stable/
+    gpg_key: https://rpm.releases.hashicorp.com/gpg
+
   - name: hashicorp-rhel9
     enable: true
     path: hashicorp/rhel/9/x86_64/stable
@@ -354,15 +455,21 @@ rpm_repos:
   # ---------------------------------------------------------------------------
   # InfluxDB / Telegraf
   # ---------------------------------------------------------------------------
-  - name: influxdb
+  - name: influxdata
     enable: true
-    path: influxdb/rhel/9/x86_64/stable
-    base_url: https://repos.influxdata.com/rhel/9/x86_64/stable/
-    gpg_key: https://repos.influxdata.com/influxdata-archive_compat.key
+    path: influxdata/stable/x86_64/main
+    base_url: https://repos.influxdata.com/stable/x86_64/main/
+    gpg_key: https://repos.influxdata.com/influxdata-archive.key
 
   # ---------------------------------------------------------------------------
   # Nginx (official)
   # ---------------------------------------------------------------------------
+  - name: nginx-stable-rhel10
+    enable: true
+    path: nginx/stable/rhel/10/x86_64
+    base_url: https://nginx.org/packages/rhel/10/x86_64/
+    gpg_key: https://nginx.org/keys/nginx_signing.key
+
   - name: nginx-stable-rhel9
     enable: true
     path: nginx/stable/rhel/9/x86_64
@@ -378,41 +485,59 @@ rpm_repos:
   # ---------------------------------------------------------------------------
   # MariaDB
   # ---------------------------------------------------------------------------
+  - name: mariadb-118-rhel10
+    enable: true
+    path: mariadb/yum/11.8/rhel/10/x86_64
+    base_url: https://dlm.mariadb.com/repo/mariadb-server/11.8/yum/rhel/10/x86_64/
+    gpg_key: https://supplychain.mariadb.com/MariaDB-Server-GPG-KEY
+
+  - name: mariadb-118-rhel9
+    enable: true
+    path: mariadb/yum/11.8/rhel/9/x86_64
+    base_url: https://dlm.mariadb.com/repo/mariadb-server/11.8/yum/rhel/9/x86_64/
+    gpg_key: https://supplychain.mariadb.com/MariaDB-Server-GPG-KEY
+
   - name: mariadb-1011-rhel9
     enable: true
     path: mariadb/yum/10.11/rhel/9/x86_64
-    base_url: https://downloads.mariadb.com/MariaDB/mariadb-10.11/yum/rhel/9/x86_64/
+    base_url: https://dlm.mariadb.com/repo/mariadb-server/10.11/yum/rhel/9/x86_64/
     gpg_key: https://supplychain.mariadb.com/MariaDB-Server-GPG-KEY
 
   # ---------------------------------------------------------------------------
-  # MongoDB 7.0
+  # MongoDB 8.0
   # ---------------------------------------------------------------------------
-  - name: mongodb-70-rhel9
+  - name: mongodb-80-rhel10
     enable: true
-    path: mongodb/7.0/rhel/9/x86_64
-    base_url: https://repo.mongodb.org/yum/redhat/9/mongodb-org/7.0/x86_64/
-    gpg_key: https://www.mongodb.org/static/pgp/server-7.0.asc
+    path: mongodb/8.0/rhel/10/x86_64
+    base_url: https://repo.mongodb.org/yum/redhat/10/mongodb-org/8.0/x86_64/
+    gpg_key: https://www.mongodb.org/static/pgp/server-8.0.asc
 
-  - name: mongodb-70-rhel8
+  - name: mongodb-80-rhel9
     enable: true
-    path: mongodb/7.0/rhel/8/x86_64
-    base_url: https://repo.mongodb.org/yum/redhat/8/mongodb-org/7.0/x86_64/
-    gpg_key: https://www.mongodb.org/static/pgp/server-7.0.asc
+    path: mongodb/8.0/rhel/9/x86_64
+    base_url: https://repo.mongodb.org/yum/redhat/9/mongodb-org/8.0/x86_64/
+    gpg_key: https://www.mongodb.org/static/pgp/server-8.0.asc
+
+  - name: mongodb-80-rhel8
+    enable: true
+    path: mongodb/8.0/rhel/8/x86_64
+    base_url: https://repo.mongodb.org/yum/redhat/8/mongodb-org/8.0/x86_64/
+    gpg_key: https://www.mongodb.org/static/pgp/server-8.0.asc
 
   # ---------------------------------------------------------------------------
-  # Kubernetes
+  # Kubernetes (one repo per minor version, covers all arches)
   # ---------------------------------------------------------------------------
-  - name: kubernetes-1.32
-    enable: false # pkgs.k8s.io blocks automated access from CI runners; enable for production use
-    path: kubernetes/1.32/rpm/x86_64
-    base_url: https://pkgs.k8s.io/core:/stable:/v1.32/rpm/x86_64/
-    gpg_key: https://pkgs.k8s.io/core:/stable:/v1.32/rpm/repodata/repomd.xml.key
+  - name: kubernetes-1.37
+    enable: true
+    path: kubernetes/1.37/rpm
+    base_url: https://pkgs.k8s.io/core:/stable:/v1.37/rpm/
+    gpg_key: https://pkgs.k8s.io/core:/stable:/v1.37/rpm/repodata/repomd.xml.key
 
-  - name: kubernetes-1.31
-    enable: false # pkgs.k8s.io blocks automated access from CI runners; enable for production use
-    path: kubernetes/1.31/rpm/x86_64
-    base_url: https://pkgs.k8s.io/core:/stable:/v1.31/rpm/x86_64/
-    gpg_key: https://pkgs.k8s.io/core:/stable:/v1.31/rpm/repodata/repomd.xml.key
+  - name: kubernetes-1.36
+    enable: true
+    path: kubernetes/1.36/rpm
+    base_url: https://pkgs.k8s.io/core:/stable:/v1.36/rpm/
+    gpg_key: https://pkgs.k8s.io/core:/stable:/v1.36/rpm/repodata/repomd.xml.key
 
   # ---------------------------------------------------------------------------
   # osquery
