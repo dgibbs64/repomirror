@@ -35,6 +35,7 @@ func main() { //nolint:gocyclo
 	validateConfig := flag.Bool("validate", false, "validate config file and exit")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	dryRun := flag.Bool("dry-run", false, "parse metadata and show what would be downloaded; create directory structure but skip actual downloads")
+	verbose := flag.Bool("verbose", false, "with -dry-run, list every file that would be downloaded")
 	flag.Parse()
 
 	if *showVersion {
@@ -88,6 +89,7 @@ func main() { //nolint:gocyclo
 	}
 	if *dryRun {
 		dl.DryRun = true
+		dl.Verbose = *verbose
 		log.Println("[dry-run] mode enabled, no files will be downloaded or removed")
 	}
 	verify := cfg.SignaturesEnabled()

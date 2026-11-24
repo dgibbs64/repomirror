@@ -54,7 +54,8 @@ var (
 type Client struct {
 	HTTP      *http.Client
 	Retries   int
-	DryRun    bool // if true, DownloadFile creates dirs and logs but skips actual downloads
+	DryRun    bool // if true, DownloadFile creates dirs but skips actual downloads
+	Verbose   bool // if true, dry-run logs every file it would download
 	UserAgent string
 	limiter   *rate.Limiter
 }
@@ -195,7 +196,9 @@ func (c *Client) DownloadFileP(url, destPath, algo, expected string, prog *Count
 		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", filepath.Dir(destPath), err)
 		}
-		log.Printf("[dry-run] would download: %s", url)
+		if c.Verbose {
+			log.Printf("[dry-run] would download: %s", url)
+		}
 		return nil
 	}
 

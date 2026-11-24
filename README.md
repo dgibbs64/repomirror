@@ -45,7 +45,7 @@ looks for `mirrors.yml` (or `mirrors.yaml`).
 ./repomirror -dry-run
 ```
 
-Parses and verifies repository metadata and shows package counts without downloading anything. It also lists what pruning would remove, and generates client config files so you can inspect them before running a full sync.
+Parses and verifies repository metadata and shows package counts without downloading anything. It also lists what pruning would remove, and generates client config files so you can inspect them before running a full sync. Add `-verbose` to also list every file it would download.
 
 ### Mirror repositories
 
@@ -88,13 +88,14 @@ Errors (1)
 
 ### Flags
 
-| Flag        | Default                                          | Description                                   |
-| ----------- | ------------------------------------------------ | --------------------------------------------- |
-| `-config`   | `mirrors.yml` or `mirrors.yaml` (next to binary) | Path to config file                           |
-| `-init`     |                                                  | Write example config and exit                 |
-| `-validate` |                                                  | Validate config and exit                      |
-| `-dry-run`  |                                                  | Preview downloads and pruning without changes |
-| `-version`  |                                                  | Print version and exit                        |
+| Flag        | Default                                          | Description                                        |
+| ----------- | ------------------------------------------------ | -------------------------------------------------- |
+| `-config`   | `mirrors.yml` or `mirrors.yaml` (next to binary) | Path to config file                                |
+| `-init`     |                                                  | Write example config and exit                      |
+| `-validate` |                                                  | Validate config and exit                           |
+| `-dry-run`  |                                                  | Preview downloads and pruning without changes      |
+| `-verbose`  |                                                  | With `-dry-run`, list every file it would download |
+| `-version`  |                                                  | Print version and exit                             |
 
 ## Configuration
 
