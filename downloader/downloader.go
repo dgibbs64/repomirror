@@ -548,7 +548,7 @@ func checksumMatchP(path, algo, expected string, prog *Counter) (bool, error) {
 	defer func() { _ = f.Close() }()
 
 	var total int64 = -1
-	if info, err := f.Stat(); err == nil {
+	if info, statErr := f.Stat(); statErr == nil {
 		total = info.Size()
 	}
 	display := filepath.Base(path)

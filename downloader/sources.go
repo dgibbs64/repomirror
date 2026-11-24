@@ -133,8 +133,8 @@ func ResolveSourceURLs(primaryURL, mirrorlistURL, metalinkURL, preferred, repoTy
 	if mirrorlistURL != "" {
 		data, err := dl.FetchBytes(mirrorlistURL)
 		if err != nil {
-			if err := optional("fetch mirrorlist", err); err != nil {
-				return nil, err
+			if optErr := optional("fetch mirrorlist", err); optErr != nil {
+				return nil, optErr
 			}
 		}
 		for _, line := range strings.Split(string(data), "\n") {
@@ -149,8 +149,8 @@ func ResolveSourceURLs(primaryURL, mirrorlistURL, metalinkURL, preferred, repoTy
 	if metalinkURL != "" {
 		data, err := dl.FetchBytes(metalinkURL)
 		if err != nil {
-			if err := optional("fetch metalink", err); err != nil {
-				return nil, err
+			if optErr := optional("fetch metalink", err); optErr != nil {
+				return nil, optErr
 			}
 		}
 		var ml struct {
@@ -160,9 +160,9 @@ func ResolveSourceURLs(primaryURL, mirrorlistURL, metalinkURL, preferred, repoTy
 			} `xml:"files>file>resources>url"`
 		}
 		if len(data) > 0 {
-			if err := xml.Unmarshal(data, &ml); err != nil {
-				if err := optional("parse metalink", err); err != nil {
-					return nil, err
+			if xmlErr := xml.Unmarshal(data, &ml); xmlErr != nil {
+				if optErr := optional("parse metalink", xmlErr); optErr != nil {
+					return nil, optErr
 				}
 			}
 		}

@@ -395,7 +395,7 @@ func parsePrimary(path, ext, repoName string) ([]rpmPkg, error) {
 // fileExt returns the lowercase extension of a URL or file path.
 func fileExt(path string) string {
 	lower := strings.ToLower(path)
-	for _, ext := range []string{".gz", ".xz", ".bz2", ".zst", ".zstd"} {
+	for _, ext := range []string{extGz, extXz, extBz2, extZst, extZstd} {
 		if strings.HasSuffix(lower, ext) {
 			return ext
 		}
@@ -687,7 +687,7 @@ func fileSizeOrUnknown(path string) int64 {
 
 func progressTotalForStream(total int64, ext string) int64 {
 	switch strings.ToLower(ext) {
-	case ".xz", ".gz", ".bz2":
+	case extXz, extGz, extBz2:
 		// The progress reader measures decompressed bytes, so compressed size is
 		// not a valid denominator for percent/eta.
 		return -1

@@ -84,8 +84,8 @@ func Fetch(keyURL, keysDir string, dl *downloader.Client) (*Keyring, string, err
 		return nil, keyPath, fmt.Errorf("GPG key %s: %w", keyURL, err)
 	}
 	if !dl.DryRun {
-		current, _ := os.ReadFile(keyPath) // #nosec G304 – path derived from config
-		if !bytes.Equal(current, armored) {
+		current, readErr := os.ReadFile(keyPath) // #nosec G304 – path derived from config
+		if readErr != nil || !bytes.Equal(current, armored) {
 			if err := downloader.WriteFileAtomic(keyPath, armored); err != nil {
 				return kr, keyPath, fmt.Errorf("writing GPG key %s: %w", keyPath, err)
 			}

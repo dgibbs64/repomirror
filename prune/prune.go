@@ -37,81 +37,109 @@ type Options struct {
 
 const maxListed = 20
 
+type walker struct {
+	o      Options
+	base   string
+	root   *os.Root
+	skip   map[string]bool
+	dirs   []string
+	listed int
+	st     Stats
+}
+
 // Run walks root and removes files that are not in o.Keep. Symlinks are left
-// alone. Directories left empty are removed, except root itself.
+// alone. Directories left empty are removed, except root itself. All
+// removals go through an os.Root so nothing outside root can be touched.
 func Run(root string, o Options) (Stats, error) {
-	var st Stats
-	root = filepath.Clean(root)
-	skip := map[string]bool{}
+	w := &walker{o: o, base: filepath.Clean(root), skip: map[string]bool{}}
 	for _, s := range o.Skip {
-		skip[filepath.Clean(s)] = true
+		w.skip[filepath.Clean(s)] = true
 	}
-	var dirs []string
-	listed := 0
-
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return err
-		}
-		if d.IsDir() {
-			if p != root && skip[p] {
-				return filepath.SkipDir
-			}
-			if p != root {
-				dirs = append(dirs, p)
-			}
-			return nil
-		}
-		if !d.Type().IsRegular() {
-			return nil
-		}
-		if o.Keep[p] {
-			return nil
-		}
-		if o.TempOnly && !downloader.IsTempFile(p) {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		st.Files++
-		st.Bytes += info.Size()
-		if o.DryRun {
-			if listed < maxListed {
-				log.Printf("%s would remove %s", o.Label, p)
-				listed++
-			}
-			return nil
-		}
-		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			log.Printf("%s could not remove %s: %v", o.Label, p, err)
-			st.Files--
-			st.Bytes -= info.Size()
-			return nil
-		}
-		downloader.ForgetPath(p)
-		return nil
-	})
+	r, err := os.OpenRoot(w.base)
 	if err != nil {
-		return st, err
+		if os.IsNotExist(err) {
+			return w.st, nil
+		}
+		return w.st, err
 	}
+	defer func() { _ = r.Close() }()
+	w.root = r
 
+	if err := fs.WalkDir(r.FS(), ".", w.visit); err != nil {
+		return w.st, err
+	}
 	if !o.DryRun && !o.TempOnly {
-		sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
-		for _, d := range dirs {
-			if isUnder(d, o.Skip) {
-				continue
-			}
-			if err := os.Remove(d); err == nil {
-				st.Dirs++
-			}
+		w.removeEmptyDirs()
+	}
+	return w.st, nil
+}
+
+func (w *walker) visit(rel string, d fs.DirEntry, err error) error {
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if rel == "." {
+		return nil
+	}
+	abs := filepath.Join(w.base, filepath.FromSlash(rel))
+	if d.IsDir() {
+		if w.skip[abs] {
+			return filepath.SkipDir
+		}
+		w.dirs = append(w.dirs, rel)
+		return nil
+	}
+	if !d.Type().IsRegular() || !w.shouldRemove(abs) {
+		return nil
+	}
+	info, err := d.Info()
+	if err != nil {
+		return nil
+	}
+	w.remove(rel, abs, info.Size())
+	return nil
+}
+
+func (w *walker) shouldRemove(abs string) bool {
+	if w.o.Keep[abs] {
+		return false
+	}
+	return !w.o.TempOnly || downloader.IsTempFile(abs)
+}
+
+func (w *walker) remove(rel, abs string, size int64) {
+	if w.o.DryRun {
+		if w.listed < maxListed {
+			log.Printf("%s would remove %s", w.o.Label, abs)
+			w.listed++
+		}
+		w.st.Files++
+		w.st.Bytes += size
+		return
+	}
+	if err := w.root.Remove(filepath.FromSlash(rel)); err != nil && !os.IsNotExist(err) {
+		log.Printf("%s could not remove %s: %v", w.o.Label, abs, err)
+		return
+	}
+	w.st.Files++
+	w.st.Bytes += size
+	downloader.ForgetPath(abs)
+}
+
+func (w *walker) removeEmptyDirs() {
+	sort.Slice(w.dirs, func(i, j int) bool { return len(w.dirs[i]) > len(w.dirs[j]) })
+	for _, rel := range w.dirs {
+		abs := filepath.Join(w.base, filepath.FromSlash(rel))
+		if isUnder(abs, w.o.Skip) {
+			continue
+		}
+		if err := w.root.Remove(filepath.FromSlash(rel)); err == nil {
+			w.st.Dirs++
 		}
 	}
-	return st, nil
 }
 
 func isUnder(p string, roots []string) bool {

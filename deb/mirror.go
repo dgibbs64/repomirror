@@ -77,9 +77,15 @@ type suitePlan struct {
 	referenced []string
 }
 
+const (
+	extGz  = ".gz"
+	extXz  = ".xz"
+	extBz2 = ".bz2"
+)
+
 // compression variants in the order they are preferred for parsing.
-var packagesVariants = []string{".gz", ".xz", ".bz2", ""}
-var translationVariants = []string{"", ".gz", ".bz2", ".xz"}
+var packagesVariants = []string{extGz, extXz, extBz2, ""}
+var translationVariants = []string{"", extGz, extBz2, extXz}
 
 // Mirror downloads one APT repository for all requested suites and
 // components into o.DestDir, preserving the upstream directory layout.
@@ -664,20 +670,20 @@ type debPkg struct {
 // architectures (plus "all") are returned.
 func parsePackages(r io.Reader, ext string, arches []string) ([]debPkg, error) {
 	switch ext {
-	case ".gz":
+	case extGz:
 		gz, err := gzip.NewReader(r)
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = gz.Close() }()
 		r = gz
-	case ".xz":
+	case extXz:
 		xzr, err := xz.NewReader(r)
 		if err != nil {
 			return nil, err
 		}
 		r = xzr
-	case ".bz2":
+	case extBz2:
 		r = bzip2.NewReader(r)
 	}
 	return scanPackages(r, arches)
