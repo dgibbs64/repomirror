@@ -98,7 +98,7 @@ func main() { //nolint:gocyclo
 	var exitCode int
 	paths := newPathTracker()
 	runStart := time.Now()
-	report := &runReport{DryRun: *dryRun, Prune: cfg.Prune}
+	report := &runReport{DryRun: *dryRun, Prune: cfg.Prune, Style: detectReportStyle()}
 
 	// Mirror DEB repos first, sequentially. Each repo uses cfg.Workers
 	// concurrent connections internally.
@@ -269,18 +269,23 @@ func cleanMirrorPaths(t *pathTracker, outputDir string, prune bool, dryRun bool,
 	for _, dir := range t.order {
 		s := t.states[dir]
 		label := "[prune] " + dir + ":"
+		entry := cleanupReport{Path: relPath(outputDir, dir)}
 		switch {
 		case s.hasDisabled:
 			log.Printf("%s skipped, a repo using this path has enable=false", label)
-			continue
+			entry.Skipped = "a repo is disabled"
 		case !s.complete:
 			log.Printf("%s skipped, the sync for this path had errors", label)
-			continue
+			entry.Skipped = "sync had errors"
 		case dir == outputDir || dir == string(filepath.Separator):
 			log.Printf("%s skipped, a repo path must be a subdirectory of output_dir", label)
-			continue
+			entry.Skipped = "not a subdirectory of output_dir"
 		case prune && len(s.keep) == 0:
 			log.Printf("%s skipped, nothing was referenced", label)
+			entry.Skipped = "nothing referenced"
+		}
+		if entry.Skipped != "" {
+			report.addCleanup(entry)
 			continue
 		}
 		var nested []string
@@ -298,11 +303,14 @@ func cleanMirrorPaths(t *pathTracker, outputDir string, prune bool, dryRun bool,
 		})
 		if err != nil {
 			log.Printf("%s ERROR: %v", label, err)
+			entry.Err = err
+			report.addCleanup(entry)
 			report.addError(fmt.Sprintf("%s %v", label, err))
 			continue
 		}
-		report.CleanFiles += st.Files
-		report.CleanBytes += st.Bytes
+		entry.Files = st.Files
+		entry.Bytes = st.Bytes
+		report.addCleanup(entry)
 		if st.Files == 0 {
 			continue
 		}
@@ -316,6 +324,13 @@ func cleanMirrorPaths(t *pathTracker, outputDir string, prune bool, dryRun bool,
 		}
 		log.Printf("%s %s %d %s (%s)", label, verb, st.Files, what, downloader.FmtBytes(float64(st.Bytes)))
 	}
+}
+
+func relPath(base, p string) string {
+	if rel, err := filepath.Rel(base, p); err == nil && !strings.HasPrefix(rel, "..") {
+		return filepath.ToSlash(rel)
+	}
+	return p
 }
 
 func defaultConfigPath(binDir string) string {

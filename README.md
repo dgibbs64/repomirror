@@ -55,23 +55,34 @@ Parses and verifies repository metadata and shows package counts without downloa
 
 The exit code is non-zero if any repository, suite, metadata file or package failed. A repository that fails keeps serving its previous metadata.
 
-When the run finishes, repomirror prints a report:
+When the run finishes, repomirror prints a report: one row per repository, then one row per mirror path showing what pruning (or, with `prune: false`, temporary-file cleanup) removed or why it skipped the path, a summary line and every error from the run.
 
 ```text
 Sync report
-===========
-TYPE  REPO                 STATUS   PACKAGES  FAILED  DOWNLOADED  TIME
-rpm   centos-10stream-crb  ok       3914      0       1.2 GB      4m10s
-rpm   broken-repo          FAILED   0         0       0           1s
-rpm   epel-10              skipped  -         -       -           -
+╭──────┬─────────────────────┬───────────┬──────────┬────────┬────────────┬───────╮
+│ Type │ Repo                │ Status    │ Packages │ Failed │ Downloaded │  Time │
+├──────┼─────────────────────┼───────────┼──────────┼────────┼────────────┼───────┤
+│ RPM  │ centos-10stream-crb │ ✔ ok      │    3,914 │      0 │     1.2 GB │ 4m10s │
+│ RPM  │ broken-repo         │ ✘ FAILED  │        0 │      0 │          0 │    1s │
+│ RPM  │ epel-10             │ – skipped │        - │      - │          - │     - │
+╰──────┴─────────────────────┴───────────┴──────────┴────────┴────────────┴───────╯
 
-3 repo(s): 1 ok, 1 failed, 1 skipped. Downloaded 1.2 GB in 4m11s.
+Prune
+╭────────────────────────────────┬───────────────────────────────┬───────┬─────────╮
+│ Path                           │ Result                        │ Files │    Size │
+├────────────────────────────────┼───────────────────────────────┼───────┼─────────┤
+│ centos/10-stream/CRB/x86_64/os │ ✔ removed                     │    14 │ 96.4 MB │
+│ broken/x86_64                  │ – skipped: sync had errors    │     - │       - │
+│ epel/10/Everything/x86_64      │ – skipped: a repo is disabled │     - │       - │
+╰────────────────────────────────┴───────────────────────────────┴───────┴─────────╯
 
-Errors (1):
-  - [rpm] broken-repo: fetch repomd.xml: HTTP 404 for https://mirror.stream.centos.org/does-not-exist/x86_64/os/repodata/repomd.xml
+3 repo(s) · 1 ok · 1 failed · 1 skipped · 1.2 GB downloaded · removed 14 file(s), 96.4 MB · took 4m11s
+
+Errors (1)
+  ✘ [rpm] broken-repo: fetch repomd.xml: HTTP 404 for https://mirror.stream.centos.org/does-not-exist/x86_64/os/repodata/repomd.xml
 ```
 
-`DOWNLOADED` counts package bytes fetched in this run, so a repository that is already up to date shows `0`.
+`Downloaded` counts package bytes fetched in this run, so a repository that is already up to date shows `0`. Status is always written out (`ok`, `FAILED`, `skipped`); colour is added only on a terminal and is turned off by `NO_COLOR`. Terminals without a UTF-8 locale get plain ASCII borders.
 
 ### Flags
 
