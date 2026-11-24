@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/ProtonMail/go-crypto v1.5.2
-	github.com/klauspost/compress v1.18.6
+	github.com/klauspost/compress v1.18.7
 	github.com/ulikunitz/xz v0.5.15
 	golang.org/x/time v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
