@@ -49,10 +49,14 @@ type Options struct {
 }
 
 // Result lists the files a run wants to keep under DestDir. Complete is true
-// only when every suite and package was mirrored without errors.
+// only when every suite and package was mirrored without errors. Packages,
+// Failed and Bytes count the package files handled, failed and downloaded.
 type Result struct {
 	Referenced map[string]bool
 	Complete   bool
+	Packages   int
+	Failed     int
+	Bytes      int64
 }
 
 type pkgEntry struct {
@@ -145,7 +149,10 @@ func Mirror(o Options, dl *downloader.Client) (*Result, error) { //nolint:gocycl
 	}
 	log.Printf("[deb] %s: %d packages to mirror", o.Name, len(jobsList))
 
-	errCount := downloadPackages(dl, ss, o, jobsList)
+	errCount, bytes := downloadPackages(dl, ss, o, jobsList)
+	res.Packages = len(jobsList)
+	res.Failed = errCount
+	res.Bytes = bytes
 
 	if suiteFailures > 0 || errCount > 0 {
 		if errCount > 0 {
@@ -180,7 +187,7 @@ func Mirror(o Options, dl *downloader.Client) (*Result, error) { //nolint:gocycl
 	return res, nil
 }
 
-func downloadPackages(dl *downloader.Client, ss *downloader.SourceSet, o Options, list []pkgEntry) int {
+func downloadPackages(dl *downloader.Client, ss *downloader.SourceSet, o Options, list []pkgEntry) (int, int64) {
 	var prog *downloader.Counter
 	var stopProg chan struct{}
 	if !dl.DryRun {
@@ -224,7 +231,11 @@ func downloadPackages(dl *downloader.Client, ss *downloader.SourceSet, o Options
 		log.Printf("[deb] %s: package error: %v", o.Name, err)
 		count++
 	}
-	return count
+	var bytes int64
+	if prog != nil {
+		bytes = prog.Bytes()
+	}
+	return count, bytes
 }
 
 // publish moves staged metadata into place, creates by-hash copies and then

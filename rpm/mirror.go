@@ -84,10 +84,14 @@ type Options struct {
 }
 
 // Result lists the files a run wants to keep under DestDir. Complete is true
-// only when all metadata and packages were mirrored without errors.
+// only when all metadata and packages were mirrored without errors. Packages,
+// Failed and Bytes count the package files handled, failed and downloaded.
 type Result struct {
 	Referenced map[string]bool
 	Complete   bool
+	Packages   int
+	Failed     int
+	Bytes      int64
 }
 
 var repomdSigSuffixes = []string{".asc", ".key", ".sig"}
@@ -315,6 +319,11 @@ func Mirror(o Options, dl *downloader.Client) (*Result, error) { //nolint:gocycl
 	for err := range errs {
 		log.Printf("[rpm] %s: package error: %v", repoName, err)
 		errCount++
+	}
+	res.Packages = len(jobsList)
+	res.Failed = errCount
+	if prog != nil {
+		res.Bytes = prog.Bytes()
 	}
 	if errCount > 0 {
 		return res, fmt.Errorf("[rpm] %s: %d package(s) failed to download; repomd.xml not updated", repoName, errCount)

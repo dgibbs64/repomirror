@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"repomirror/clientconfigs"
 	"repomirror/config"
@@ -96,6 +97,8 @@ func main() { //nolint:gocyclo
 
 	var exitCode int
 	paths := newPathTracker()
+	runStart := time.Now()
+	report := &runReport{DryRun: *dryRun, Prune: cfg.Prune}
 
 	// Mirror DEB repos first, sequentially. Each repo uses cfg.Workers
 	// concurrent connections internally.
@@ -104,8 +107,10 @@ func main() { //nolint:gocyclo
 		if !repo.Enabled() {
 			log.Printf("[deb] %s: skipped (enable=false)", displayName(repo.Name, repo.Path))
 			paths.disabled(destDir)
+			report.add(repoReport{Type: "deb", Name: displayName(repo.Name, repo.Path), Status: statusSkipped})
 			continue
 		}
+		start := time.Now()
 		res, err := deb.Mirror(deb.Options{
 			Name:             repo.Name,
 			MirrorURL:        repo.Mirror,
@@ -125,6 +130,7 @@ func main() { //nolint:gocyclo
 			exitCode = 1
 		}
 		paths.record(destDir, res.Referenced, err == nil && res.Complete)
+		report.add(newRepoReport("deb", displayName(repo.Name, repo.Path), res.Packages, res.Failed, res.Bytes, time.Since(start), err))
 	}
 
 	// Then mirror RPM repos, sequentially.
@@ -133,8 +139,10 @@ func main() { //nolint:gocyclo
 		if !repo.Enabled() {
 			log.Printf("[rpm] %s: skipped (enable=false)", displayName(repo.Name, repo.Path))
 			paths.disabled(destDir)
+			report.add(repoReport{Type: "rpm", Name: displayName(repo.Name, repo.Path), Status: statusSkipped})
 			continue
 		}
+		start := time.Now()
 		res, err := rpm.Mirror(rpm.Options{
 			Name:             repo.Name,
 			BaseURL:          repo.BaseURL,
@@ -153,19 +161,23 @@ func main() { //nolint:gocyclo
 			exitCode = 1
 		}
 		paths.record(destDir, res.Referenced, err == nil && res.Complete)
+		report.add(newRepoReport("rpm", displayName(repo.Name, repo.Path), res.Packages, res.Failed, res.Bytes, time.Since(start), err))
 	}
 
-	cleanMirrorPaths(paths, outputDir, cfg.Prune, *dryRun)
+	cleanMirrorPaths(paths, outputDir, cfg.Prune, *dryRun, report)
 
 	// Generate client config files (yum .repo / apt .list) pointing at the mirror.
 	if cfg.MirrorURL != "" {
 		if err := clientconfigs.Generate(cfg, outputDir, cfg.MirrorURL, !*dryRun); err != nil {
 			log.Printf("ERROR: generating client configs: %v", err)
+			report.addError(fmt.Sprintf("generating client configs: %v", err))
 			exitCode = 1
 		} else {
 			log.Printf("Client configs written to %s", filepath.Join(outputDir, "client-configs"))
 		}
 	}
+
+	report.write(log.Writer(), time.Since(runStart))
 
 	if exitCode == 0 {
 		if *dryRun {
@@ -174,10 +186,27 @@ func main() { //nolint:gocyclo
 			log.Println("All repositories mirrored successfully.")
 		}
 	} else {
-		log.Println("Mirror completed with errors (see above).")
+		log.Println("Mirror completed with errors (see the report above).")
 	}
 	unlock()
 	os.Exit(exitCode)
+}
+
+func newRepoReport(repoType, name string, packages, failed int, bytes int64, d time.Duration, err error) repoReport {
+	rep := repoReport{
+		Type:     repoType,
+		Name:     name,
+		Status:   statusOK,
+		Packages: packages,
+		Failed:   failed,
+		Bytes:    bytes,
+		Duration: d,
+		Err:      err,
+	}
+	if err != nil {
+		rep.Status = statusFailed
+	}
+	return rep
 }
 
 func repoDestDir(outputDir, path, name string) string {
@@ -235,7 +264,7 @@ func (t *pathTracker) record(dir string, keep map[string]bool, ok bool) {
 // cleanMirrorPaths removes leftover temporary files and, when prune is set,
 // files upstream no longer lists. A path is only cleaned when every repo
 // entry that writes to it is enabled and finished without errors.
-func cleanMirrorPaths(t *pathTracker, outputDir string, prune bool, dryRun bool) {
+func cleanMirrorPaths(t *pathTracker, outputDir string, prune bool, dryRun bool, report *runReport) {
 	outputDir = filepath.Clean(outputDir)
 	for _, dir := range t.order {
 		s := t.states[dir]
@@ -269,8 +298,11 @@ func cleanMirrorPaths(t *pathTracker, outputDir string, prune bool, dryRun bool)
 		})
 		if err != nil {
 			log.Printf("%s ERROR: %v", label, err)
+			report.addError(fmt.Sprintf("%s %v", label, err))
 			continue
 		}
+		report.CleanFiles += st.Files
+		report.CleanBytes += st.Bytes
 		if st.Files == 0 {
 			continue
 		}

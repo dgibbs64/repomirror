@@ -15,6 +15,7 @@ A single static binary that mirrors RPM (YUM/DNF) and DEB (APT) repositories for
 - Dry-run mode to preview downloads and pruning
 - URL-path-aligned directory layout (mirrors the upstream URL structure)
 - Live progress output with speed and ETA
+- End-of-run report with per-repository status, package counts, download size and time, plus a list of any errors
 - Optional download rate limit and custom User-Agent
 - Generates ready-to-use client config files (`.repo`, `.list`, `.sources`) that fetch signing keys from the mirror itself
 - Single static binary with no runtime dependencies
@@ -53,6 +54,24 @@ Parses and verifies repository metadata and shows package counts without downloa
 ```
 
 The exit code is non-zero if any repository, suite, metadata file or package failed. A repository that fails keeps serving its previous metadata.
+
+When the run finishes, repomirror prints a report:
+
+```text
+Sync report
+===========
+TYPE  REPO                 STATUS   PACKAGES  FAILED  DOWNLOADED  TIME
+rpm   centos-10stream-crb  ok       3914      0       1.2 GB      4m10s
+rpm   broken-repo          FAILED   0         0       0           1s
+rpm   epel-10              skipped  -         -       -           -
+
+3 repo(s): 1 ok, 1 failed, 1 skipped. Downloaded 1.2 GB in 4m11s.
+
+Errors (1):
+  - [rpm] broken-repo: fetch repomd.xml: HTTP 404 for https://mirror.stream.centos.org/does-not-exist/x86_64/os/repodata/repomd.xml
+```
+
+`DOWNLOADED` counts package bytes fetched in this run, so a repository that is already up to date shows `0`.
 
 ### Flags
 
