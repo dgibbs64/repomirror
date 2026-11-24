@@ -224,42 +224,7 @@ func (c *Counter) Log() {
 		return
 	}
 
-	line := base
-
-	if v := c.active.Load(); v != nil {
-		if activeName, ok := v.(string); ok && activeName != "" {
-			activeTx := c.activeTx.Load()
-			activeSz := c.activeSz.Load()
-			op := "download"
-			if activeOp != "" {
-				op = activeOp
-			}
-
-			fileIcon := progressTheme.icon(c.repoType)
-			actionLabel := "downloading"
-			if op == "validate" {
-				actionLabel = "validating"
-				if progressTheme.unicode {
-					fileIcon = "🔎"
-				} else {
-					fileIcon = "chk"
-				}
-			}
-			if activeSz > 0 {
-				activePct := float64(activeTx) / float64(activeSz) * 100
-				line += fmt.Sprintf(" | %s %s %s %s/%s %s", fileIcon,
-					progressTheme.paint("2", actionLabel),
-					progressTheme.paint("2", activeName),
-					FmtBytes(float64(activeTx)), FmtBytes(float64(activeSz)),
-					progressTheme.paint("33", fmt.Sprintf("(%.1f%%)", activePct)))
-			} else {
-				line += fmt.Sprintf(" | %s %s %s %s", fileIcon,
-					progressTheme.paint("2", actionLabel),
-					progressTheme.paint("2", activeName),
-					FmtBytes(float64(activeTx)))
-			}
-		}
-	}
+	line := base + c.activeDetail(activeOp)
 
 	width := termWidth()
 	line = fitToWidth(line, width)
@@ -300,6 +265,43 @@ func (c *Counter) Finish() {
 		progressTheme.icon(c.repoType),
 		c.name+":",
 		FmtBytes(float64(bytes)), FmtDuration(elapsed), avgStr)
+}
+
+// activeDetail describes the file currently being downloaded or validated,
+// or returns "" when there is none.
+func (c *Counter) activeDetail(activeOp string) string {
+	v := c.active.Load()
+	if v == nil {
+		return ""
+	}
+	activeName, ok := v.(string)
+	if !ok || activeName == "" {
+		return ""
+	}
+	activeTx := c.activeTx.Load()
+	activeSz := c.activeSz.Load()
+
+	fileIcon := progressTheme.icon(c.repoType)
+	actionLabel := "downloading"
+	if activeOp == "validate" {
+		actionLabel = "validating"
+		fileIcon = "chk"
+		if progressTheme.unicode {
+			fileIcon = "🔎"
+		}
+	}
+	if activeSz > 0 {
+		activePct := float64(activeTx) / float64(activeSz) * 100
+		return fmt.Sprintf(" | %s %s %s %s/%s %s", fileIcon,
+			progressTheme.paint("2", actionLabel),
+			progressTheme.paint("2", activeName),
+			FmtBytes(float64(activeTx)), FmtBytes(float64(activeSz)),
+			progressTheme.paint("33", fmt.Sprintf("(%.1f%%)", activePct)))
+	}
+	return fmt.Sprintf(" | %s %s %s %s", fileIcon,
+		progressTheme.paint("2", actionLabel),
+		progressTheme.paint("2", activeName),
+		FmtBytes(float64(activeTx)))
 }
 
 // StartLogger refreshes the progress line every interval until stop is closed.
