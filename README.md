@@ -62,8 +62,8 @@ Sync report
 ╭──────┬─────────────────────┬───────────┬──────────┬────────┬────────────┬───────╮
 │ Type │ Repo                │ Status    │ Packages │ Failed │ Downloaded │  Time │
 ├──────┼─────────────────────┼───────────┼──────────┼────────┼────────────┼───────┤
-│ RPM  │ centos-10stream-crb │ ✔ ok      │    3,914 │      0 │     1.2 GB │ 4m10s │
-│ RPM  │ broken-repo         │ ✘ FAILED  │        0 │      0 │          0 │    1s │
+│ RPM  │ centos-10stream-crb │ ✓ ok      │    3,914 │      0 │     1.2 GB │ 4m10s │
+│ RPM  │ broken-repo         │ ✗ FAILED  │        0 │      0 │          0 │    1s │
 │ RPM  │ epel-10             │ – skipped │        - │      - │          - │     - │
 ├──────┼─────────────────────┼───────────┼──────────┼────────┼────────────┼───────┤
 │      │ Total               │           │    3,914 │      0 │     1.2 GB │ 4m11s │
@@ -73,7 +73,7 @@ Prune
 ╭────────────────────────────────┬───────────────────────────────┬───────┬─────────╮
 │ Path                           │ Result                        │ Files │    Size │
 ├────────────────────────────────┼───────────────────────────────┼───────┼─────────┤
-│ centos/10-stream/CRB/x86_64/os │ ✔ removed                     │    14 │ 96.4 MB │
+│ centos/10-stream/CRB/x86_64/os │ ✓ removed                     │    14 │ 96.4 MB │
 │ broken/x86_64                  │ – skipped: sync had errors    │     - │       - │
 │ epel/10/Everything/x86_64      │ – skipped: a repo is disabled │     - │       - │
 ╰────────────────────────────────┴───────────────────────────────┴───────┴─────────╯
@@ -81,7 +81,7 @@ Prune
 3 repo(s) · 1 ok · 1 failed · 1 skipped · 1.2 GB downloaded · removed 14 file(s), 96.4 MB · total time 4m11s
 
 Errors (1)
-  ✘ [rpm] broken-repo: fetch repomd.xml: HTTP 404 for https://mirror.stream.centos.org/does-not-exist/x86_64/os/repodata/repomd.xml
+  ✗ [rpm] broken-repo: fetch repomd.xml: HTTP 404 for https://mirror.stream.centos.org/does-not-exist/x86_64/os/repodata/repomd.xml
 ```
 
 `Downloaded` counts package bytes fetched in this run, so a repository that is already up to date shows `0`. Status is always written out (`ok`, `FAILED`, `skipped`); colour is added only on a terminal and is turned off by `NO_COLOR`. Terminals without a UTF-8 locale get plain ASCII borders.

@@ -561,7 +561,7 @@ func withPrimaryParseProgress(r io.Reader, repoName, stage string, total int64) 
 		defer t.Stop()
 		spinner := []string{"|", "/", "-", "\\"}
 		spin := 0
-		lastLogged := int64(-1)
+		plain := downloader.NewPlainProgress()
 		for {
 			select {
 			case <-t.C:
@@ -572,9 +572,8 @@ func withPrimaryParseProgress(r io.Reader, repoName, stage string, total int64) 
 					spin++
 					continue
 				}
-				if current != lastLogged {
+				if plain.Due(time.Now()) {
 					log.Printf("%s", line)
-					lastLogged = current
 				}
 			case <-stop:
 				if interactive {
@@ -616,7 +615,7 @@ func (p *parseItemProgress) loop() {
 	defer t.Stop()
 	spinner := []string{"|", "/", "-", "\\"}
 	spin := 0
-	last := int64(-1)
+	plain := downloader.NewPlainProgress()
 	for {
 		select {
 		case <-t.C:
@@ -627,9 +626,8 @@ func (p *parseItemProgress) loop() {
 				spin++
 				continue
 			}
-			if done != last {
+			if plain.Due(time.Now()) {
 				log.Printf("%s", line)
-				last = done
 			}
 		case <-p.stop:
 			if p.interactive {
