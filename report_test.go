@@ -37,18 +37,18 @@ func TestReportUnicode(t *testing.T) {
 	assertContains(t, out, []string{
 		"Sync report\n╭──────┬────────────────┬───────────┬──────────┬────────┬────────────┬───────╮\n",
 		"│ Type │ Repo           │ Status    │ Packages │ Failed │ Downloaded │  Time │\n",
-		"│ DEB  │ ubuntu         │ ✔ ok      │   12,000 │      0 │     3.5 GB │ 5m02s │\n",
-		"│ RPM  │ rocky-9-baseos │ ✘ FAILED  │      800 │      3 │    10.0 MB │   30s │\n",
+		"│ DEB  │ ubuntu         │ ✓ ok      │   12,000 │      0 │     3.5 GB │ 5m02s │\n",
+		"│ RPM  │ rocky-9-baseos │ ✗ FAILED  │      800 │      3 │    10.0 MB │   30s │\n",
 		"│ RPM  │ epel           │ – skipped │        - │      - │          - │     - │\n",
 		"├──────┼────────────────┼───────────┼──────────┼────────┼────────────┼───────┤\n│      │ Total          │           │   12,800 │      3 │     3.5 GB │ 6m00s │\n╰",
 		"\nPrune\n",
-		"│ ubuntu         │ ✔ removed                  │    12 │ 40.0 MB │\n",
+		"│ ubuntu         │ ✓ removed                  │    12 │ 40.0 MB │\n",
 		"│ rocky/9/BaseOS │ – skipped: sync had errors │     - │       - │\n",
-		"│ docker         │ ✘ error                    │     - │       - │\n",
+		"│ docker         │ ✗ error                    │     - │       - │\n",
 		"3 repo(s) · 1 ok · 1 failed · 1 skipped · 3.5 GB downloaded · removed 12 file(s), 40.0 MB · total time 6m00s\n",
 		"Errors (2)\n",
-		"  ✘ [rpm] rocky-9-baseos: 3 package(s) failed to download; repomd.xml not updated\n",
-		"  ✘ [prune] docker: permission denied\n",
+		"  ✗ [rpm] rocky-9-baseos: 3 package(s) failed to download; repomd.xml not updated\n",
+		"  ✗ [prune] docker: permission denied\n",
 	})
 	if strings.Contains(out, "\033[") {
 		t.Errorf("colour codes written with colour disabled\n%s", out)
@@ -87,10 +87,10 @@ func TestReportDryRun(t *testing.T) {
 	assertContains(t, out, []string{
 		"Sync report (dry run)\n",
 		"│      │ Total  │        │    1,200 │      0 │          - │   1s │\n",
-		"│ DEB  │ ubuntu │ ✔ ok   │    1,200 │      0 │          - │   1s │\n",
+		"│ DEB  │ ubuntu │ ✓ ok   │    1,200 │      0 │          - │   1s │\n",
 		"Temporary file cleanup (dry run)\n",
-		"│ ubuntu │ ✔ would remove      │     2 │ 1.0 KB │\n",
-		"│ debian │ ✔ nothing to remove │     0 │      0 │\n",
+		"│ ubuntu │ ✓ would remove      │     2 │ 1.0 KB │\n",
+		"│ debian │ ✓ nothing to remove │     0 │      0 │\n",
 		"1 repo(s) · 1 ok · 0 failed · 0 skipped · would remove 2 file(s), 1.0 KB · total time 1s\n",
 	})
 	if strings.Contains(out, "Errors") {
@@ -101,7 +101,7 @@ func TestReportDryRun(t *testing.T) {
 func TestReportColor(t *testing.T) {
 	var buf bytes.Buffer
 	sampleReport(reportStyle{Unicode: true, Color: true}).write(&buf, time.Minute)
-	assertContains(t, buf.String(), []string{"\033[32m✔ ok\033[0m", "\033[1;31m✘ FAILED\033[0m"})
+	assertContains(t, buf.String(), []string{"\033[32m✓ ok\033[0m", "\033[1;31m✗ FAILED\033[0m"})
 }
 
 func TestReportNoRepos(t *testing.T) {
@@ -114,6 +114,27 @@ func TestFmtCount(t *testing.T) {
 	for n, want := range map[int]string{0: "0", 999: "999", 1000: "1,000", 12000: "12,000", 1234567: "1,234,567"} {
 		if got := fmtCount(n); got != want {
 			t.Errorf("fmtCount(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+func TestReportWideNames(t *testing.T) {
+	r := &runReport{Style: reportStyle{Unicode: true}}
+	r.add(newRepoReport("deb", "日本語", 1, 0, 0, time.Second, nil))
+	r.add(newRepoReport("deb", "abcdef", 1, 0, 0, time.Second, nil))
+
+	var buf bytes.Buffer
+	r.write(&buf, time.Second)
+	assertContains(t, buf.String(), []string{
+		"│ DEB  │ 日本語 │ ✓ ok   │",
+		"│ DEB  │ abcdef │ ✓ ok   │",
+	})
+}
+
+func TestDisplayWidth(t *testing.T) {
+	for text, want := range map[string]int{"abc": 3, "✓ ok": 4, "日本": 4, "📥": 2, "–": 1} {
+		if got := displayWidth(text); got != want {
+			t.Errorf("displayWidth(%q) = %d, want %d", text, got, want)
 		}
 	}
 }
