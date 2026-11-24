@@ -269,21 +269,7 @@ func cleanMirrorPaths(t *pathTracker, outputDir string, prune bool, dryRun bool,
 	for _, dir := range t.order {
 		s := t.states[dir]
 		label := "[prune] " + dir + ":"
-		entry := cleanupReport{Path: relPath(outputDir, dir)}
-		switch {
-		case s.hasDisabled:
-			log.Printf("%s skipped, a repo using this path has enable=false", label)
-			entry.Skipped = "a repo is disabled"
-		case !s.complete:
-			log.Printf("%s skipped, the sync for this path had errors", label)
-			entry.Skipped = "sync had errors"
-		case dir == outputDir || dir == string(filepath.Separator):
-			log.Printf("%s skipped, a repo path must be a subdirectory of output_dir", label)
-			entry.Skipped = "not a subdirectory of output_dir"
-		case prune && len(s.keep) == 0:
-			log.Printf("%s skipped, nothing was referenced", label)
-			entry.Skipped = "nothing referenced"
-		}
+		entry := cleanupReport{Path: relPath(outputDir, dir), Skipped: cleanSkipReason(s, dir, outputDir, prune)}
 		if entry.Skipped != "" {
 			report.addCleanup(entry)
 			continue
@@ -318,12 +304,29 @@ func cleanMirrorPaths(t *pathTracker, outputDir string, prune bool, dryRun bool,
 		if prune {
 			what = "unreferenced file(s)"
 		}
-		verb := "removed"
-		if dryRun {
-			verb = "would remove"
-		}
-		log.Printf("%s %s %d %s (%s)", label, verb, st.Files, what, downloader.FmtBytes(float64(st.Bytes)))
+		log.Printf("%s %s %d %s (%s)", label, removeVerb(dryRun), st.Files, what, downloader.FmtBytes(float64(st.Bytes)))
 	}
+}
+
+// cleanSkipReason logs and returns why a path must not be cleaned, or "" when
+// it can be.
+func cleanSkipReason(s *pathState, dir, outputDir string, prune bool) string {
+	label := "[prune] " + dir + ":"
+	switch {
+	case s.hasDisabled:
+		log.Printf("%s skipped, a repo using this path has enable=false", label)
+		return "a repo is disabled"
+	case !s.complete:
+		log.Printf("%s skipped, the sync for this path had errors", label)
+		return "sync had errors"
+	case dir == outputDir || dir == string(filepath.Separator):
+		log.Printf("%s skipped, a repo path must be a subdirectory of output_dir", label)
+		return "not a subdirectory of output_dir"
+	case prune && len(s.keep) == 0:
+		log.Printf("%s skipped, nothing was referenced", label)
+		return "nothing referenced"
+	}
+	return ""
 }
 
 func relPath(base, p string) string {

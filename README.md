@@ -65,6 +65,8 @@ Sync report
 │ RPM  │ centos-10stream-crb │ ✔ ok      │    3,914 │      0 │     1.2 GB │ 4m10s │
 │ RPM  │ broken-repo         │ ✘ FAILED  │        0 │      0 │          0 │    1s │
 │ RPM  │ epel-10             │ – skipped │        - │      - │          - │     - │
+├──────┼─────────────────────┼───────────┼──────────┼────────┼────────────┼───────┤
+│      │ Total               │           │    3,914 │      0 │     1.2 GB │ 4m11s │
 ╰──────┴─────────────────────┴───────────┴──────────┴────────┴────────────┴───────╯
 
 Prune
@@ -76,7 +78,7 @@ Prune
 │ epel/10/Everything/x86_64      │ – skipped: a repo is disabled │     - │       - │
 ╰────────────────────────────────┴───────────────────────────────┴───────┴─────────╯
 
-3 repo(s) · 1 ok · 1 failed · 1 skipped · 1.2 GB downloaded · removed 14 file(s), 96.4 MB · took 4m11s
+3 repo(s) · 1 ok · 1 failed · 1 skipped · 1.2 GB downloaded · removed 14 file(s), 96.4 MB · total time 4m11s
 
 Errors (1)
   ✘ [rpm] broken-repo: fetch repomd.xml: HTTP 404 for https://mirror.stream.centos.org/does-not-exist/x86_64/os/repodata/repomd.xml

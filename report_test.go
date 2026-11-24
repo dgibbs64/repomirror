@@ -40,11 +40,12 @@ func TestReportUnicode(t *testing.T) {
 		"│ DEB  │ ubuntu         │ ✔ ok      │   12,000 │      0 │     3.5 GB │ 5m02s │\n",
 		"│ RPM  │ rocky-9-baseos │ ✘ FAILED  │      800 │      3 │    10.0 MB │   30s │\n",
 		"│ RPM  │ epel           │ – skipped │        - │      - │          - │     - │\n",
+		"├──────┼────────────────┼───────────┼──────────┼────────┼────────────┼───────┤\n│      │ Total          │           │   12,800 │      3 │     3.5 GB │ 6m00s │\n╰",
 		"\nPrune\n",
 		"│ ubuntu         │ ✔ removed                  │    12 │ 40.0 MB │\n",
 		"│ rocky/9/BaseOS │ – skipped: sync had errors │     - │       - │\n",
 		"│ docker         │ ✘ error                    │     - │       - │\n",
-		"3 repo(s) · 1 ok · 1 failed · 1 skipped · 3.5 GB downloaded · removed 12 file(s), 40.0 MB · took 6m00s\n",
+		"3 repo(s) · 1 ok · 1 failed · 1 skipped · 3.5 GB downloaded · removed 12 file(s), 40.0 MB · total time 6m00s\n",
 		"Errors (2)\n",
 		"  ✘ [rpm] rocky-9-baseos: 3 package(s) failed to download; repomd.xml not updated\n",
 		"  ✘ [prune] docker: permission denied\n",
@@ -62,8 +63,9 @@ func TestReportASCII(t *testing.T) {
 		"+------+----------------+---------+----------+--------+------------+-------+\n",
 		"| DEB  | ubuntu         | ok      |   12,000 |      0 |     3.5 GB | 5m02s |\n",
 		"| RPM  | rocky-9-baseos | FAILED  |      800 |      3 |    10.0 MB |   30s |\n",
+		"|      | Total          |         |   12,800 |      3 |     3.5 GB | 6m00s |\n",
 		"| docker         | error                    |     - |       - |\n",
-		"3 repo(s), 1 ok, 1 failed, 1 skipped, 3.5 GB downloaded, removed 12 file(s), 40.0 MB, took 6m00s\n",
+		"3 repo(s), 1 ok, 1 failed, 1 skipped, 3.5 GB downloaded, removed 12 file(s), 40.0 MB, total time 6m00s\n",
 		"  - [prune] docker: permission denied\n",
 	})
 	for _, r := range out {
@@ -84,11 +86,12 @@ func TestReportDryRun(t *testing.T) {
 	out := buf.String()
 	assertContains(t, out, []string{
 		"Sync report (dry run)\n",
+		"│      │ Total  │        │    1,200 │      0 │          - │   1s │\n",
 		"│ DEB  │ ubuntu │ ✔ ok   │    1,200 │      0 │          - │   1s │\n",
-		"Cleanup (temporary files), dry run\n",
+		"Temporary file cleanup (dry run)\n",
 		"│ ubuntu │ ✔ would remove      │     2 │ 1.0 KB │\n",
 		"│ debian │ ✔ nothing to remove │     0 │      0 │\n",
-		"1 repo(s) · 1 ok · 0 failed · 0 skipped · would remove 2 file(s), 1.0 KB · took 1s\n",
+		"1 repo(s) · 1 ok · 0 failed · 0 skipped · would remove 2 file(s), 1.0 KB · total time 1s\n",
 	})
 	if strings.Contains(out, "Errors") {
 		t.Errorf("report with no errors should not list errors\n%s", out)

@@ -18,6 +18,13 @@ const (
 	statusSkipped = "skipped"
 )
 
+const (
+	colorBold  = "1"
+	colorDim   = "2"
+	colorGreen = "32"
+	colorRed   = "1;31"
+)
+
 type repoReport struct {
 	Type     string
 	Name     string
@@ -76,6 +83,16 @@ func (s reportStyle) paint(code, text string) string {
 	return "\033[" + code + "m" + text + "\033[0m"
 }
 
+func (s reportStyle) good(text string) string { return s.pick("✔ ", "") + text }
+
+func (s reportStyle) bad(text string) string { return s.pick("✘ ", "") + text }
+
+func (s reportStyle) skip(text string) string { return s.pick("– ", "") + text }
+
+func (s reportStyle) heading(w io.Writer, text string) {
+	fmt.Fprintf(w, "\n%s\n", s.paint(colorBold, text))
+}
+
 func (s reportStyle) pick(unicode, ascii string) string {
 	if s.Unicode {
 		return unicode
@@ -93,12 +110,12 @@ type column struct {
 	right bool
 }
 
-func (s reportStyle) table(w io.Writer, cols []column, rows [][]cell) {
+func (s reportStyle) table(w io.Writer, cols []column, rows, footer [][]cell) {
 	widths := make([]int, len(cols))
 	for i, c := range cols {
 		widths[i] = utf8.RuneCountInString(c.title)
 	}
-	for _, row := range rows {
+	for _, row := range append(append([][]cell{}, rows...), footer...) {
 		for i, c := range row {
 			widths[i] = max(widths[i], utf8.RuneCountInString(c.text))
 		}
@@ -110,11 +127,11 @@ func (s reportStyle) table(w io.Writer, cols []column, rows [][]cell) {
 		for i, wd := range widths {
 			parts[i] = strings.Repeat(h, wd+2)
 		}
-		fmt.Fprintln(w, s.paint("2", left+strings.Join(parts, mid)+right))
+		fmt.Fprintln(w, s.paint(colorDim, left+strings.Join(parts, mid)+right))
 	}
 	line := func(cells []cell, right func(int) bool) {
 		var b strings.Builder
-		b.WriteString(s.paint("2", v))
+		b.WriteString(s.paint(colorDim, v))
 		for i, c := range cells {
 			pad := strings.Repeat(" ", widths[i]-utf8.RuneCountInString(c.text))
 			text := s.paint(c.color, c.text)
@@ -123,14 +140,14 @@ func (s reportStyle) table(w io.Writer, cols []column, rows [][]cell) {
 			} else {
 				text += pad
 			}
-			b.WriteString(" " + text + " " + s.paint("2", v))
+			b.WriteString(" " + text + " " + s.paint(colorDim, v))
 		}
 		fmt.Fprintln(w, b.String())
 	}
 
 	header := make([]cell, len(cols))
 	for i, c := range cols {
-		header[i] = cell{text: c.title, color: "1"}
+		header[i] = cell{text: c.title, color: colorBold}
 	}
 	border(s.pick("╭", "+"), s.pick("┬", "+"), s.pick("╮", "+"))
 	right := func(i int) bool { return cols[i].right }
@@ -139,127 +156,166 @@ func (s reportStyle) table(w io.Writer, cols []column, rows [][]cell) {
 	for _, row := range rows {
 		line(row, right)
 	}
+	if len(footer) > 0 {
+		border(s.pick("├", "+"), s.pick("┼", "+"), s.pick("┤", "+"))
+		for _, row := range footer {
+			line(row, right)
+		}
+	}
 	border(s.pick("╰", "+"), s.pick("┴", "+"), s.pick("╯", "+"))
 }
 
+type tally struct {
+	ok, failed, skipped int
+	packages, failedPkg int
+	bytes               int64
+	cleanFiles          int
+	cleanBytes          int64
+}
+
+func removeVerb(dryRun bool) string {
+	if dryRun {
+		return "would remove"
+	}
+	return "removed"
+}
+
 func (r *runReport) write(w io.Writer, elapsed time.Duration) {
-	s := r.Style
 	title := "Sync report"
 	if r.DryRun {
 		title += " (dry run)"
 	}
-	fmt.Fprintf(w, "\n%s\n", s.paint("1", title))
+	r.Style.heading(w, title)
 
-	var ok, failed, skipped int
-	var bytes int64
+	var t tally
+	r.writeRepos(w, &t, elapsed)
+	r.writeCleanup(w, &t)
+	r.writeSummary(w, &t, elapsed)
+	r.writeErrors(w)
+	fmt.Fprintln(w)
+}
+
+func (r *runReport) repoRow(rep repoReport, t *tally) []cell {
+	s := r.Style
+	t.bytes += rep.Bytes
+	t.packages += rep.Packages
+	t.failedPkg += rep.Failed
+	typ := cell{text: strings.ToUpper(rep.Type)}
+	name := cell{text: rep.Name}
+	var status cell
+	switch rep.Status {
+	case statusOK:
+		t.ok++
+		status = cell{text: s.good(statusOK), color: colorGreen}
+	case statusFailed:
+		t.failed++
+		status = cell{text: s.bad(statusFailed), color: colorRed}
+	default:
+		t.skipped++
+		dash := cell{text: "-", color: colorDim}
+		return []cell{typ, name, {text: s.skip(statusSkipped), color: colorDim}, dash, dash, dash, dash}
+	}
+	return []cell{typ, name, status,
+		{text: fmtCount(rep.Packages)}, failedCell(rep.Failed),
+		{text: r.fmtBytes(rep.Bytes)}, {text: downloader.FmtDuration(rep.Duration)}}
+}
+
+func (r *runReport) writeRepos(w io.Writer, t *tally, elapsed time.Duration) {
 	if len(r.Repos) == 0 {
 		fmt.Fprintln(w, "No repositories configured.")
-	} else {
-		cols := []column{
-			{title: "Type"}, {title: "Repo"}, {title: "Status"},
-			{title: "Packages", right: true}, {title: "Failed", right: true},
-			{title: "Downloaded", right: true}, {title: "Time", right: true},
-		}
-		rows := make([][]cell, 0, len(r.Repos))
-		for _, rep := range r.Repos {
-			bytes += rep.Bytes
-			typ := cell{text: strings.ToUpper(rep.Type)}
-			name := cell{text: rep.Name}
-			switch rep.Status {
-			case statusOK:
-				ok++
-				rows = append(rows, []cell{typ, name, {text: s.pick("✔ ", "") + statusOK, color: "32"},
-					{text: fmtCount(rep.Packages)}, failedCell(rep.Failed),
-					{text: r.fmtBytes(rep.Bytes)}, {text: downloader.FmtDuration(rep.Duration)}})
-			case statusFailed:
-				failed++
-				rows = append(rows, []cell{typ, name, {text: s.pick("✘ ", "") + statusFailed, color: "1;31"},
-					{text: fmtCount(rep.Packages)}, failedCell(rep.Failed),
-					{text: r.fmtBytes(rep.Bytes)}, {text: downloader.FmtDuration(rep.Duration)}})
-			default:
-				skipped++
-				dash := cell{text: "-", color: "2"}
-				rows = append(rows, []cell{typ, name, {text: s.pick("– ", "") + statusSkipped, color: "2"},
-					dash, dash, dash, dash})
-			}
-		}
-		s.table(w, cols, rows)
+		return
 	}
-
-	var cleanFiles int
-	var cleanBytes int64
-	if len(r.Cleanup) > 0 {
-		heading := "Cleanup (temporary files)"
-		if r.Prune {
-			heading = "Prune"
-		}
-		if r.DryRun {
-			heading += ", dry run"
-		}
-		fmt.Fprintf(w, "\n%s\n", s.paint("1", heading))
-		cols := []column{{title: "Path"}, {title: "Result"}, {title: "Files", right: true}, {title: "Size", right: true}}
-		rows := make([][]cell, 0, len(r.Cleanup))
-		for _, c := range r.Cleanup {
-			path := cell{text: c.Path}
-			dash := cell{text: "-", color: "2"}
-			switch {
-			case c.Err != nil:
-				rows = append(rows, []cell{path, {text: s.pick("✘ ", "") + "error", color: "1;31"}, dash, dash})
-			case c.Skipped != "":
-				rows = append(rows, []cell{path, {text: s.pick("– ", "") + "skipped: " + c.Skipped, color: "2"}, dash, dash})
-			case c.Files == 0:
-				rows = append(rows, []cell{path, {text: s.pick("✔ ", "") + "nothing to remove", color: "32"},
-					{text: "0"}, {text: "0"}})
-			default:
-				verb := "removed"
-				if r.DryRun {
-					verb = "would remove"
-				}
-				cleanFiles += c.Files
-				cleanBytes += c.Bytes
-				rows = append(rows, []cell{path, {text: s.pick("✔ ", "") + verb, color: "32"},
-					{text: fmtCount(c.Files)}, {text: downloader.FmtBytes(float64(c.Bytes))}})
-			}
-		}
-		s.table(w, cols, rows)
+	cols := []column{
+		{title: "Type"}, {title: "Repo"}, {title: "Status"},
+		{title: "Packages", right: true}, {title: "Failed", right: true},
+		{title: "Downloaded", right: true}, {title: "Time", right: true},
 	}
+	rows := make([][]cell, 0, len(r.Repos))
+	for _, rep := range r.Repos {
+		rows = append(rows, r.repoRow(rep, t))
+	}
+	total := []cell{{}, {text: "Total", color: colorBold}, {},
+		{text: fmtCount(t.packages), color: colorBold}, failedCell(t.failedPkg),
+		{text: r.fmtBytes(t.bytes), color: colorBold}, {text: downloader.FmtDuration(elapsed), color: colorBold}}
+	r.Style.table(w, cols, rows, [][]cell{total})
+}
 
-	sep := s.pick(" · ", ", ")
-	failedText := fmt.Sprintf("%d failed", failed)
-	if failed > 0 {
-		failedText = s.paint("1;31", failedText)
+func (r *runReport) cleanupRow(c cleanupReport, t *tally) []cell {
+	s := r.Style
+	path := cell{text: c.Path}
+	dash := cell{text: "-", color: colorDim}
+	switch {
+	case c.Err != nil:
+		return []cell{path, {text: s.bad("error"), color: colorRed}, dash, dash}
+	case c.Skipped != "":
+		return []cell{path, {text: s.skip("skipped: " + c.Skipped), color: colorDim}, dash, dash}
+	case c.Files == 0:
+		return []cell{path, {text: s.good("nothing to remove"), color: colorGreen}, {text: "0"}, {text: "0"}}
+	}
+	t.cleanFiles += c.Files
+	t.cleanBytes += c.Bytes
+	return []cell{path, {text: s.good(removeVerb(r.DryRun)), color: colorGreen},
+		{text: fmtCount(c.Files)}, {text: downloader.FmtBytes(float64(c.Bytes))}}
+}
+
+func (r *runReport) writeCleanup(w io.Writer, t *tally) {
+	if len(r.Cleanup) == 0 {
+		return
+	}
+	heading := "Temporary file cleanup"
+	if r.Prune {
+		heading = "Prune"
+	}
+	if r.DryRun {
+		heading += " (dry run)"
+	}
+	r.Style.heading(w, heading)
+	cols := []column{{title: "Path"}, {title: "Result"}, {title: "Files", right: true}, {title: "Size", right: true}}
+	rows := make([][]cell, 0, len(r.Cleanup))
+	for _, c := range r.Cleanup {
+		rows = append(rows, r.cleanupRow(c, t))
+	}
+	r.Style.table(w, cols, rows, nil)
+}
+
+func (r *runReport) writeSummary(w io.Writer, t *tally, elapsed time.Duration) {
+	s := r.Style
+	failedText := fmt.Sprintf("%d failed", t.failed)
+	if t.failed > 0 {
+		failedText = s.paint(colorRed, failedText)
 	}
 	parts := []string{
 		fmt.Sprintf("%d repo(s)", len(r.Repos)),
-		s.paint("32", fmt.Sprintf("%d ok", ok)),
+		s.paint(colorGreen, fmt.Sprintf("%d ok", t.ok)),
 		failedText,
-		fmt.Sprintf("%d skipped", skipped),
+		fmt.Sprintf("%d skipped", t.skipped),
 	}
 	if !r.DryRun {
-		parts = append(parts, downloader.FmtBytes(float64(bytes))+" downloaded")
+		parts = append(parts, downloader.FmtBytes(float64(t.bytes))+" downloaded")
 	}
-	if cleanFiles > 0 {
-		verb := "removed"
-		if r.DryRun {
-			verb = "would remove"
-		}
-		parts = append(parts, fmt.Sprintf("%s %s file(s), %s", verb, fmtCount(cleanFiles), downloader.FmtBytes(float64(cleanBytes))))
+	if t.cleanFiles > 0 {
+		parts = append(parts, fmt.Sprintf("%s %s file(s), %s", removeVerb(r.DryRun), fmtCount(t.cleanFiles), downloader.FmtBytes(float64(t.cleanBytes))))
 	}
-	parts = append(parts, "took "+downloader.FmtDuration(elapsed))
-	fmt.Fprintf(w, "\n%s\n", strings.Join(parts, sep))
-
-	if len(r.Errors) > 0 {
-		fmt.Fprintf(w, "\n%s\n", s.paint("1;31", fmt.Sprintf("Errors (%d)", len(r.Errors))))
-		for _, msg := range r.Errors {
-			fmt.Fprintf(w, "  %s %s\n", s.paint("31", s.pick("✘", "-")), msg)
-		}
-	}
+	parts = append(parts, s.paint(colorBold, "total time "+downloader.FmtDuration(elapsed)))
 	fmt.Fprintln(w)
+	fmt.Fprintln(w, strings.Join(parts, s.pick(" · ", ", ")))
+}
+
+func (r *runReport) writeErrors(w io.Writer) {
+	if len(r.Errors) == 0 {
+		return
+	}
+	s := r.Style
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, s.paint(colorRed, fmt.Sprintf("Errors (%d)", len(r.Errors))))
+	for _, msg := range r.Errors {
+		fmt.Fprintf(w, "  %s %s\n", s.paint("31", s.pick("✘", "-")), msg)
+	}
 }
 
 func failedCell(n int) cell {
 	if n > 0 {
-		return cell{text: fmtCount(n), color: "1;31"}
+		return cell{text: fmtCount(n), color: colorRed}
 	}
 	return cell{text: "0"}
 }
