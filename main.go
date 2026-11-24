@@ -18,7 +18,7 @@ import (
 	"repomirror/rpm"
 )
 
-var version = "2026.05.20"
+var version = "2026.11.24"
 
 func main() { //nolint:gocyclo
 	// Determine the directory the binary lives in (USB drive root).
