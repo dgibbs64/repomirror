@@ -65,7 +65,18 @@ func Run(root string, o Options) (Stats, error) {
 	defer func() { _ = r.Close() }()
 	w.root = r
 
-	if err := fs.WalkDir(r.FS(), ".", w.visit); err != nil {
+	walkRoot := w.base
+	if fi, err := os.Lstat(w.base); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		walkRoot += string(filepath.Separator)
+	}
+	err = filepath.WalkDir(walkRoot, func(abs string, d fs.DirEntry, err error) error {
+		rel, relErr := filepath.Rel(w.base, abs)
+		if relErr != nil {
+			return relErr
+		}
+		return w.visit(filepath.ToSlash(rel), d, err)
+	})
+	if err != nil {
 		return w.st, err
 	}
 	if !o.DryRun && !o.TempOnly {
